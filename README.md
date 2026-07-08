@@ -1,41 +1,74 @@
-# traverse
-A custom widget for ArcGIS Experience Builder Developer Edition.
+# Traverse Widget for ArcGIS Experience Builder
 
-**Purpose:** COGO traverse entry widget. Users enter a series of courses (bearing + distance, or curve arc data) to draw a traverse polygon on the map. Features include live debounced redraw, quadrant-number bearing format, GeoJSON export, on-map color picker, keyboard navigation, per-course distance units, on-map click-to-draw with snapping, traverse rotation, and curve course support.
+A COGO traverse widget for ArcGIS Experience Builder. Enter survey courses by bearing and distance (or curve arc data) and the widget draws the traverse on the map, complete with a closure report, per-course distance units, on-map click-to-draw with snapping, traverse rotation, and GeoJSON export.
 
-**Per-course distance units:**
-- `TraverseCourse` carries `{ type, bearing, distance, unit: DistanceUnit, radius?, curveDirection? }`. Each row has its own unit dropdown (ft / ch / m / rd).
-- The global selector is the **"Default / Report Unit"**: it sets the unit for newly added rows and controls the closure report summary. Individual courses can freely override it, so mixed-unit deed calls can be entered without conversion.
-- All geometry math (`_liveRedraw`, `_drawTraverse`), closure report, and GeoJSON export follow `course.unit`. The GeoJSON `totalDistance` property sums all courses in meters then converts to the report unit.
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**Curve courses:**
-- `TraverseCourse.type` is `'line' | 'curve'`. A curve row expands to show a radius input and a Left/Right direction toggle.
-- All geometry, closure, highlight, and GeoJSON export paths go through `resolveCourseStep()`, which returns the chord bearing and chord length for a curve (what separates PC from PT) plus `arcMeters` (the traveled arc length) for perimeter totals. The closure report uses `arcMeters` for total distance but `stepMeters` (chord) for departure/latitude math — matching standard COGO practice.
-- `computeCurvePoints()` interpolates 24 arc segments for rendering and GeoJSON export (`densePoints`), so exported LineStrings and Polygons actually curve rather than cutting straight across the chord. The Points export uses the chord endpoints (PC/PT) only.
-- Curve lines render with `style: 'dash-dot'`; straight lines use `style: 'dash'` — visually distinguishable on the map.
+- **Authors:** Eric McAvoy and Nicholas Cramer (Polk County, Oregon)
+- **Built and tested on:** ArcGIS Experience Builder Developer Edition 1.20
 
-**Snapping:**
-- All three pick modes (start point, rotation pivot, course-drawing vertices) use a shared `SketchViewModel` (`_snapSVM`) backed by a scratch graphics layer (`_snapScratchLayer`). This replaces the old `view.on('click')` approach.
-- `_activePickMode: 'start' | 'rotation' | 'draw' | null` tracks which pick is in progress. `_handleSnapCreateEvent()` routes completed picks to the correct handler and re-arms the SVM for the next course-drawing vertex.
-- A "Snap to Map Features" checkbox toggles `snappingOptions.enabled`. Feature sources are rebuilt from visible map layers before each pick via `_applySnapSources()`.
-- Esc cancels the SVM natively (no separate key handler needed). The cancel event routes through `_handleSnapCreateEvent` and calls `_finishDrawingCourses()` for draw mode, or cleans up start/rotation picks.
-- `_snapSVM.destroy()` is called in `componentWillUnmount`. `_snapScratchLayer` is removed from the map alongside the other traverse layers.
+> The widget folder itself lives in [`traverse/`](traverse). This repo wraps it with project files (license, this readme) so it works for both downloading a release and cloning.
 
-**On-map click-to-draw:**
-- "Draw Courses on Map" enters `isDrawingCourses` mode (crosshair cursor, popup suppressed via `_syncPopup`).
-- The first click sets the start point if one is not already set. Each subsequent click calls `computeAzimuthAndDistance()` (inverse of `computeNextPoint`) to derive bearing and distance from the previous vertex, then `formatBearingForEntry()` to serialize the azimuth into the active bearing format, and appends the result (or fills an empty trailing row) in state.
-- Clicks are handled via the snapping SVM (`_snapSVM.create('point')`), re-armed after each completed point by `_handleSnapCreateEvent`. Esc or "Finish Drawing" exits via `_finishDrawingCourses()`.
+<!-- Tip: add a screenshot or GIF of the widget here to give people a quick visual. -->
 
-**Traverse rotation:**
-- The "Rotate Traverse" section has a degree offset input (positive = CW, negative = CCW). The preview is live: `rotationOffset` participates in `geometryChanged`, so `_liveRedraw` renders the rotated geometry as the user types.
-- An optional "Set Rotation Point" picker places a custom pivot on the map, shown as a purple diamond marker on `_pivotLayer` (a dedicated `GraphicsLayer` added on top of the stack). Default pivot is the start point.
-- "Apply Rotation" commits: rewrites every parseable course's bearing via `rotateAzimuth()` and, if the pivot is not the start point, moves the start point via `rotatePointAround()`. Rows that do not currently parse (empty/incomplete) are left untouched, then `rotationOffset` is reset to `''`.
-- `_pivotLayer` must be added, removed, and cleared alongside the other traverse layers — see `_initLayers`, `componentWillUnmount`, and `_clearAll`.
+## Getting the widget
 
-**Popup coordination:**
-- A toggle lets the user disable map identify popups while drafting a traverse.
-- `_syncPopup(popupEnabledByUser, isPicking)` is the **only** place in the widget that writes `view.popupEnabled`. Never write it directly elsewhere in the widget. The `isPicking` flag is `true` during start-point picking, course drawing, and rotation-pivot picking — all three modes suppress the popup.
-- While picking a start point, popups are suppressed and restored via `setTimeout(..., 0)` (defers past the pick click's own event processing).
-- On `componentWillUnmount`, restores `view.popupEnabled = true`.
+There are two ways to get it. Both end with you placing a `traverse` folder into your Experience Builder install.
 
----
+### Option 1: Download a release (recommended)
+
+1. Go to the [Releases](https://github.com/ncramer11/traverse/releases) page.
+2. Under the latest release, download the `traverse.zip` asset.
+3. Extract it. You will get a `traverse` folder.
+
+### Option 2: Clone or download the repo
+
+```bash
+git clone https://github.com/ncramer11/traverse.git
+```
+
+Or use the green **Code** button above and choose **Download ZIP**. The `traverse` folder is inside.
+
+## Installation
+
+1. Copy the `traverse` folder into your Experience Builder install:
+
+   ```
+   <ArcGISExperienceBuilder>/client/your-extensions/widgets/traverse
+   ```
+
+   Keep `manifest.json` directly inside `traverse/`, not nested a second level deep. Nesting is the usual cause of the widget not registering.
+
+2. Start (or restart) the client and refresh the Builder window. The widget appears under **Insert Widget > Custom**.
+
+The widget has no external npm dependencies, so no additional install step is needed.
+
+## Requirements
+
+- ArcGIS Experience Builder Developer Edition 1.20 (the build and test target). Earlier editions may work but are untested.
+
+## Features
+
+- Course entry by bearing and distance, with quadrant (N 45°30'00" E) and azimuth bearing formats.
+- Curve courses: enter a radius and left/right direction, and curves render as true arcs on the map. The closure report follows standard COGO practice (arc length for total distance, chord for departure/latitude).
+- Per-course distance units (feet, chains, meters, rods) with a global default/report unit, so mixed-unit deed calls can be entered without conversion.
+- Live redraw as you type, so the traverse updates on the map while you enter courses.
+- On-map click-to-draw: click vertices on the map and the widget derives the bearing and distance for each course, with snapping to visible map features.
+- Start point picking on the map, also with snapping.
+- Traverse rotation with a live preview and an optional custom pivot point.
+- Closure report with precision ratio, total distance, and enclosed area.
+- GeoJSON export (points, lines, and polygon). Curves export as densified geometry, so exported lines actually curve rather than cutting across the chord.
+- On-map color picker and keyboard navigation for fast course entry.
+- Optional popup suppression while drafting a traverse, so map clicks do not open identify popups.
+
+## Settings
+
+In the widget settings panel you can select the map widget, set the default bearing format (quadrant or azimuth), and set the default distance unit (feet, chains, or meters). Individual courses can override the default unit.
+
+## Feedback and issues
+
+Please report bugs and enhancement requests in this repo's [Issues](https://github.com/ncramer11/traverse/issues) tab.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). Copyright Polk County, Oregon.

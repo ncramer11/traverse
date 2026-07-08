@@ -1,0 +1,29 @@
+name: Release
+
+# Cuts a GitHub Release with a downloadable traverse.zip whenever a version
+# tag (v1.0.0, v1.1.0, ...) is pushed. No GitHub CLI needed on the machine
+# that pushes the tag.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zip the widget folder
+        run: zip -r traverse.zip traverse
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" traverse.zip \
+            --title "traverse $GITHUB_REF_NAME" \
+            --notes "Download traverse.zip, extract it, and drop the traverse folder into client\\your-extensions\\widgets. Then restart the Experience Builder client."
