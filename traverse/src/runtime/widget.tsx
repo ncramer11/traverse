@@ -243,9 +243,12 @@ function computeCurvePoints (
   const center = computeNextPoint(mid.x, mid.y, perpAz, h)
   const { az: azToStart } = computeAzimuthAndDistance(center.x, center.y, startX, startY)
   const sign = direction === 'right' ? 1 : -1
+  // azToStart is in degrees (computeAzimuthAndDistance's convention); deltaRad
+  // is in radians (it's an arc-length/radius ratio) — convert before summing.
+  const deltaDeg = deltaRad * 180 / Math.PI
   const pts: TraversePoint[] = []
   for (let s = 0; s <= segments; s++) {
-    const a = azToStart + sign * deltaRad * (s / segments)
+    const a = azToStart + sign * deltaDeg * (s / segments)
     pts.push(computeNextPoint(center.x, center.y, a, radiusMeters))
   }
   return pts
@@ -295,6 +298,11 @@ function computeClosureReport (
   let sumDep = 0, sumLat = 0, totalDist = 0
   let gx = 0, gy = 0
   const gPts: TraversePoint[] = [{ x: 0, y: 0 }]
+  // A curve's true boundary bulges away from its chord, so the plain
+  // chord-polygon shoelace sum below under- or over-counts area for any
+  // course that's a curve. Each one is corrected afterward by its circular
+  // segment area (see below, once the polygon's winding direction is known).
+  const curveSegments: Array<{ deltaRad: number; radiusMeters: number; direction: CurveDirection }> = []
   for (let i = 0; i < courses.length; i++) {
     const step = resolveCourseStep(courses[i], bearingFormat, bearingEntry)
     if (step === null) return null
@@ -304,18 +312,40 @@ function computeClosureReport (
     sumDep += dep; sumLat += lat; totalDist += step.arcMeters
     gx += dep; gy += lat
     gPts.push({ x: gx, y: gy })
+    if (courses[i].type === 'curve' && step.deltaRad !== undefined && step.radiusMeters !== undefined) {
+      curveSegments.push({ deltaRad: step.deltaRad, radiusMeters: step.radiusMeters, direction: courses[i].curveDirection || 'right' })
+    }
   }
   const closureM = Math.sqrt(sumDep * sumDep + sumLat * sumLat)
   const unitFactor = 1 / (UNIT_TO_METERS[reportUnit] || 1)
   const precisionRatio = closureM > 0.001 ? Math.round(totalDist / closureM) : 999999
 
-  let area = 0
+  // area2 is 2x the signed shoelace area of the chord-polygon; its sign gives
+  // the winding direction (positive = counterclockwise, where the polygon's
+  // interior is to the left of the direction of travel at every edge).
+  let area2 = 0
   const n = gPts.length
   for (let j = 0; j < n; j++) {
     const k = (j + 1) % n
-    area += gPts[j].x * gPts[k].y - gPts[k].x * gPts[j].y
+    area2 += gPts[j].x * gPts[k].y - gPts[k].x * gPts[j].y
   }
-  const areaSqM = Math.abs(area / 2)
+
+  // A curve's arc always lies on the opposite side of the chord from its
+  // center, which — given how curveDirection determines the center's side
+  // (see computeCurvePoints) — means a 'right' curve's arc bulges to the
+  // *left* of its own direction of travel, and a 'left' curve's to the
+  // right. Combined with the polygon's winding direction, that tells us
+  // whether each bulge adds area (bulges away from the interior) or removes
+  // it (bulges into the interior) relative to the chord-polygon.
+  const ccw = area2 > 0
+  for (const seg of curveSegments) {
+    const segmentArea2 = seg.radiusMeters * seg.radiusMeters * (seg.deltaRad - Math.sin(seg.deltaRad))
+    const bulgesLeft = seg.direction === 'right'
+    const bulgesTowardInterior = ccw ? bulgesLeft : !bulgesLeft
+    area2 += bulgesTowardInterior ? -segmentArea2 : segmentArea2
+  }
+
+  const areaSqM = Math.abs(area2) / 2
 
   return {
     closureError: closureM * unitFactor,
@@ -845,8 +875,19 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
 
     const { startPoint, courses, bearingFormat, bearingEntry } = this.state
     if (startPoint) {
-      const points = buildTraversePoints(startPoint.x, startPoint.y, courses, bearingFormat, bearingEntry)
-      this._drawLastVertex = points ? points[points.length - 1] : { x: startPoint.x, y: startPoint.y }
+      // Walk the existing courses and stop at the first invalid one (same as
+      // _liveRedraw), so a blank/incomplete trailing row — e.g. left over from
+      // "Add Leg", or from a previous draw session — doesn't reset the seed
+      // all the way back to the start point. buildTraversePoints can't be used
+      // here since it aborts (returns null) on ANY invalid course rather than
+      // returning the partial chain up to it.
+      let last = { x: startPoint.x, y: startPoint.y }
+      for (const c of courses) {
+        const step = resolveCourseStep(c, bearingFormat, bearingEntry)
+        if (step === null) break
+        last = computeNextPoint(last.x, last.y, step.az, step.stepMeters)
+      }
+      this._drawLastVertex = last
     } else {
       this._drawLastVertex = null
     }
@@ -882,9 +923,14 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     this.setState(prev => {
       const courses = [...prev.courses]
       const lastIdx = courses.length - 1
+      const lastRow = courses[lastIdx]
       const newRow: TraverseCourse = { type: 'line', bearing: bearingStr, distance: distanceInUnit.toFixed(2), unit: prev.distanceUnit }
-      // Fill a still-empty trailing row rather than stacking a redundant one.
-      if (lastIdx >= 0 && !courses[lastIdx].bearing && !courses[lastIdx].distance) {
+      // Fill a still-empty trailing LINE row rather than stacking a redundant
+      // one. A blank row already switched to Curve is left alone and a new
+      // line row is appended after it — map-click drawing always produces a
+      // straight course, and overwriting the curve row here would silently
+      // discard whatever radius/direction the user had already set on it.
+      if (lastIdx >= 0 && lastRow.type === 'line' && !lastRow.bearing && !lastRow.distance) {
         courses[lastIdx] = newRow
       } else {
         courses.push(newRow)
