@@ -1,29 +1,14 @@
+/** Traverse — settings panel (jimu-ui / ExB setting-component patterns). */
 import { React } from 'jimu-core'
+import { useTheme } from 'jimu-theme'
 import type { AllWidgetSettingProps } from 'jimu-for-builder'
-import { MapWidgetSelector } from 'jimu-ui/advanced/setting-components'
+import { SettingSection, SettingRow, MapWidgetSelector } from 'jimu-ui/advanced/setting-components'
+import { Button, Select, Option } from 'jimu-ui'
 import type { Config, IMConfig } from '../config'
 
-const S = {
-  section: { marginBottom: '16px' } as React.CSSProperties,
-  label: { fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: '#3d3d3d' } as React.CSSProperties,
-  hint: { fontSize: '11px', color: '#888', marginTop: '4px' } as React.CSSProperties,
-  btnGroup: { display: 'flex', gap: '6px' } as React.CSSProperties,
-  select: {
-    width: '100%', padding: '5px 8px', borderRadius: '4px',
-    border: '1px solid #d4d4d4', fontSize: '12px', cursor: 'pointer'
-  } as React.CSSProperties,
-  divider: { borderTop: '1px solid #e8e8e8', margin: '16px 0' } as React.CSSProperties
-}
-
-const activeBtn = (active: boolean): React.CSSProperties => ({
-  flex: 1, padding: '5px 10px', borderRadius: '4px', cursor: 'pointer',
-  fontSize: '12px', fontWeight: 500,
-  backgroundColor: active ? '#0079c1' : '#f3f3f3',
-  color: active ? 'white' : '#3d3d3d',
-  border: `1px solid ${active ? '#0079c1' : '#d4d4d4'}`
-})
-
 const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
+  const theme = useTheme()
+
   const onMapWidgetSelected = (useMapWidgetIds: string[]) => {
     props.onSettingChange({ id: props.id, useMapWidgetIds })
   }
@@ -34,48 +19,58 @@ const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
 
   const { defaultBearingFormat, defaultDistanceUnit } = props.config
 
+  const hintStyle: React.CSSProperties = {
+    fontSize: '11px', color: theme.sys.color.surface.paperHint, marginTop: theme.sys.spacing(1), lineHeight: 1.5
+  }
+
   return (
-    <div className="widget-setting-traverse p-3">
+    <div className="widget-setting-traverse">
+      <SettingSection title="Map">
+        <SettingRow>
+          <MapWidgetSelector onSelect={onMapWidgetSelected} useMapWidgetIds={props.useMapWidgetIds} />
+        </SettingRow>
+      </SettingSection>
 
-      <div style={S.section}>
-        <div style={S.label}>Map</div>
-        <MapWidgetSelector onSelect={onMapWidgetSelected} useMapWidgetIds={props.useMapWidgetIds} />
-      </div>
+      <SettingSection title="Default bearing format" role="group" aria-label="Default bearing format">
+        <SettingRow>
+          <div style={{ display: 'flex', gap: theme.sys.spacing(1), width: '100%' }}>
+            <Button
+              type={defaultBearingFormat === 'quadrant' ? 'primary' : 'secondary'}
+              size="sm"
+              style={{ flex: 1 }}
+              onClick={() => setConfig('defaultBearingFormat', 'quadrant')}
+            >Quadrant</Button>
+            <Button
+              type={defaultBearingFormat === 'azimuth' ? 'primary' : 'secondary'}
+              size="sm"
+              style={{ flex: 1 }}
+              onClick={() => setConfig('defaultBearingFormat', 'azimuth')}
+            >Azimuth</Button>
+          </div>
+        </SettingRow>
+        <SettingRow>
+          <div style={hintStyle}>
+            {defaultBearingFormat === 'quadrant'
+              ? 'e.g. N 45°30\'00" E'
+              : 'e.g. 045.5000 (0–360°, clockwise from north)'}
+          </div>
+        </SettingRow>
+      </SettingSection>
 
-      <div style={S.divider} />
-
-      <div style={S.section}>
-        <div style={S.label}>Default Bearing Format</div>
-        <div style={S.btnGroup}>
-          <button style={activeBtn(defaultBearingFormat === 'quadrant')}
-            onClick={() => setConfig('defaultBearingFormat', 'quadrant')}>
-            Quadrant
-          </button>
-          <button style={activeBtn(defaultBearingFormat === 'azimuth')}
-            onClick={() => setConfig('defaultBearingFormat', 'azimuth')}>
-            Azimuth
-          </button>
-        </div>
-        <div style={S.hint}>
-          {defaultBearingFormat === 'quadrant'
-            ? 'e.g. N 45°30\'00" E'
-            : 'e.g. 045.5000 (0–360°, clockwise from north)'}
-        </div>
-      </div>
-
-      <div style={S.section}>
-        <div style={S.label}>Default Distance Unit</div>
-        <select
-          style={S.select}
-          value={defaultDistanceUnit}
-          onChange={ev => setConfig('defaultDistanceUnit', ev.target.value as any)}
-        >
-          <option value="feet">Feet</option>
-          <option value="chains">Chains</option>
-          <option value="meters">Meters</option>
-        </select>
-      </div>
-
+      <SettingSection title="Default distance unit">
+        <SettingRow tag="label" label="Unit">
+          <Select
+            size="sm"
+            value={defaultDistanceUnit}
+            aria-label="Default distance unit"
+            onChange={(_evt, value) => setConfig('defaultDistanceUnit', value as any)}
+          >
+            <Option value="feet">Feet</Option>
+            <Option value="chains">Chains</Option>
+            <Option value="meters">Meters</Option>
+          </Select>
+        </SettingRow>
+      </SettingSection>
     </div>
   )
 }

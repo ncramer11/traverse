@@ -1,16 +1,7 @@
-import { React, type AllWidgetProps } from 'jimu-core'
+import { React, type AllWidgetProps, type IMThemeVariables } from 'jimu-core'
 import { JimuMapViewComponent, type JimuMapView, loadArcGISJSAPIModules } from 'jimu-arcgis'
+import { Button, Select, Option, Paper } from 'jimu-ui'
 import type { BearingFormat, DistanceUnit, IMConfig } from '../config'
-
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      'calcite-button': any
-      'calcite-select': any
-      'calcite-option': any
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -431,43 +422,55 @@ function encodeQNum (q: number, angle: string): string {
 // Styles
 // ---------------------------------------------------------------------------
 
-const S: Record<string, React.CSSProperties> = {
-  wrap: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
-    fontSize: '13px', backgroundColor: '#ffffff', overflow: 'hidden', boxSizing: 'border-box' },
-  header: { padding: '12px 16px', fontWeight: '600', fontSize: '15px', color: '#1e293b',
-    borderBottom: '1px solid #e2e8f0', flexShrink: 0 },
-  body: { flex: 1, overflowY: 'auto', padding: '12px 16px' },
-  section: { marginBottom: '14px' },
-  label: { fontSize: '11px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase',
-    letterSpacing: '0.05em', marginBottom: '5px' },
-  row: { display: 'flex', gap: '8px', alignItems: 'center' },
-  input: { border: '1px solid #e2e8f0', borderRadius: '5px', padding: '4px 7px',
-    fontSize: '12px', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' },
-  qNumInput: { border: '1px solid #e2e8f0', borderRadius: '5px', padding: '4px 5px',
-    fontSize: '12px', width: '32px', flexShrink: 0, fontFamily: 'monospace',
-    textAlign: 'center' as const, boxSizing: 'border-box' as const },
-  unitSelect: { border: '1px solid #e2e8f0', borderRadius: '5px', padding: '4px 2px',
-    fontSize: '11px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'monospace' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' },
-  th: { padding: '5px 6px', backgroundColor: '#f8fafc', fontWeight: '600', color: '#64748b',
-    textAlign: 'left', borderBottom: '1px solid #e2e8f0', fontSize: '11px' },
-  td: { padding: '4px 6px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' },
-  trSelected: { backgroundColor: '#e0f2fe' },
-  coordBox: { backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '5px',
-    padding: '5px 9px', fontSize: '11px', color: '#475569', fontFamily: 'monospace', marginTop: '5px' },
-  reportBox: { backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px',
-    padding: '11px 14px', marginTop: '8px' },
-  reportRow: { display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px' },
-  reportDivider: { borderTop: '1px solid #bbf7d0', paddingTop: '6px', marginTop: '4px' },
-  errorBox: { backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px',
-    padding: '7px 11px', fontSize: '12px', color: '#dc2626', marginBottom: '10px' },
-  warn: { backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px',
-    padding: '7px 11px', fontSize: '12px', color: '#92400e', marginBottom: '10px' },
-  hint: { fontSize: '11px', color: '#94a3b8', marginBottom: '10px', lineHeight: '1.5',
-    fontFamily: 'monospace', backgroundColor: '#f8fafc', padding: '5px 8px',
-    borderRadius: '4px', border: '1px solid #e2e8f0' },
-  entryToggle: { display: 'flex', gap: '4px', marginBottom: '6px', alignItems: 'center' },
-  entryToggleLabel: { fontSize: '11px', color: '#64748b', marginRight: '2px' }
+type Styles = Record<string, React.CSSProperties>
+
+// Widget-panel styling on theme.sys.* tokens (light/dark/high-contrast safe).
+// The exported GeoJSON carries no styling; there is no separate report document
+// here, so everything visible is themed.
+function makeStyles (theme: IMThemeVariables): Styles {
+  const c = theme.sys.color
+  const r = theme.sys.shape.shape1
+  return {
+    wrap: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+      fontSize: '13px', overflow: 'hidden', boxSizing: 'border-box' },
+    header: { padding: '12px 16px', fontWeight: '600', fontSize: '15px', color: c.surface.paperText,
+      borderBottom: `1px solid ${c.divider.secondary}`, flexShrink: 0 },
+    body: { flex: 1, overflowY: 'auto', padding: '12px 16px' },
+    section: { marginBottom: '14px' },
+    label: { fontSize: '11px', fontWeight: '600', color: c.surface.paperHint, textTransform: 'uppercase',
+      letterSpacing: '0.05em', marginBottom: '5px' },
+    row: { display: 'flex', gap: '8px', alignItems: 'center' },
+    input: { border: `1px solid ${c.divider.secondary}`, borderRadius: r, padding: '4px 7px',
+      fontSize: '12px', width: '100%', boxSizing: 'border-box', fontFamily: 'monospace',
+      backgroundColor: c.surface.paper, color: c.surface.paperText },
+    qNumInput: { border: `1px solid ${c.divider.secondary}`, borderRadius: r, padding: '4px 5px',
+      fontSize: '12px', width: '32px', flexShrink: 0, fontFamily: 'monospace',
+      textAlign: 'center' as const, boxSizing: 'border-box' as const,
+      backgroundColor: c.surface.paper, color: c.surface.paperText },
+    unitSelect: { border: `1px solid ${c.divider.secondary}`, borderRadius: r, padding: '4px 2px',
+      fontSize: '11px', width: '100%', boxSizing: 'border-box' as const, fontFamily: 'monospace',
+      backgroundColor: c.surface.paper, color: c.surface.paperText },
+    table: { width: '100%', borderCollapse: 'collapse', fontSize: '12px' },
+    th: { padding: '5px 6px', backgroundColor: c.surface.background, fontWeight: '600', color: c.surface.paperHint,
+      textAlign: 'left', borderBottom: `1px solid ${c.divider.secondary}`, fontSize: '11px' },
+    td: { padding: '4px 6px', borderBottom: `1px solid ${c.divider.tertiary}`, verticalAlign: 'middle' },
+    trSelected: { backgroundColor: c.info.light },
+    coordBox: { backgroundColor: c.surface.background, border: `1px solid ${c.divider.secondary}`, borderRadius: r,
+      padding: '5px 9px', fontSize: '11px', color: c.surface.paperText, fontFamily: 'monospace', marginTop: '5px' },
+    reportBox: { backgroundColor: c.success.light, border: `1px solid ${c.success.main}`, borderRadius: theme.sys.shape.shape2,
+      padding: '11px 14px', marginTop: '8px' },
+    reportRow: { display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px' },
+    reportDivider: { borderTop: `1px solid ${c.success.main}`, paddingTop: '6px', marginTop: '4px' },
+    errorBox: { backgroundColor: c.error.light, border: `1px solid ${c.error.main}`, borderRadius: r,
+      padding: '7px 11px', fontSize: '12px', color: c.error.dark, marginBottom: '10px' },
+    warn: { backgroundColor: c.warning.light, border: `1px solid ${c.warning.main}`, borderRadius: r,
+      padding: '7px 11px', fontSize: '12px', color: c.warning.dark, marginBottom: '10px' },
+    hint: { fontSize: '11px', color: c.surface.paperHint, marginBottom: '10px', lineHeight: '1.5',
+      fontFamily: 'monospace', backgroundColor: c.surface.background, padding: '5px 8px',
+      borderRadius: r, border: `1px solid ${c.divider.secondary}` },
+    entryToggle: { display: 'flex', gap: '4px', marginBottom: '6px', alignItems: 'center' },
+    entryToggleLabel: { fontSize: '11px', color: c.surface.paperHint, marginRight: '2px' }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -533,7 +536,6 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
   private _distanceRefs: Array<HTMLInputElement | null> = []
   private _qNumRefs: Array<HTMLInputElement | null> = []
   private _qAngleRefs: Array<HTMLInputElement | null> = []
-  private _unitSelectRef: React.RefObject<any> = React.createRef()
 
   constructor (props: AllWidgetProps<IMConfig>) {
     super(props)
@@ -565,18 +567,6 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       popupEnabled: true
     }
     this._onViewChange = this._onViewChange.bind(this)
-  }
-
-  // -------------------------------------------------------------------------
-  // Calcite web component wiring
-  // -------------------------------------------------------------------------
-
-  componentDidMount () {
-    const el = this._unitSelectRef.current
-    if (!el) return
-    el.addEventListener('calciteSelectChange', (ev: any) => {
-      this.setState({ distanceUnit: ev.target.value as DistanceUnit, closureReport: null })
-    })
   }
 
   // -------------------------------------------------------------------------
@@ -638,7 +628,8 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     if (this._snapSVM) { try { this._snapSVM.destroy() } catch { /* ignore */ } }
     const view = this.state.jimuMapView?.view
     if (view) {
-      try { (view as any).popupEnabled = true } catch { /* ignore */ }
+      // ExB 1.21: restore click-open popups via JimuMapView (view.popupEnabled is gone).
+      try { this.state.jimuMapView?.enableClickOpenPopup() } catch { /* ignore */ }
       if (this._traverseLayer)    view.map.remove(this._traverseLayer)
       if (this._labelLayer)       view.map.remove(this._labelLayer)
       if (this._highlightLayer)   view.map.remove(this._highlightLayer)
@@ -652,18 +643,30 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
   // -------------------------------------------------------------------------
 
   /**
-   * Sets view.popupEnabled. The draggable-popup widget honors this: when false
-   * it lets the popup close and stops re-opening it.
+   * Toggles map identify popups through JimuMapView's click-open API. The
+   * draggable-popup widget honors this: it reads isClickOpenPopupEnabled() and,
+   * when disabled, lets the popup close and stops re-opening it.
+   *
+   * ExB 1.21: `view.popupEnabled` no longer exists — the map is now the
+   * <arcgis-map> web component. `enableClickOpenPopup()` / `disableClickOpenPopup()`
+   * on JimuMapView are the supported replacement and a real public contract
+   * rather than a shared raw flag. This method remains the ONLY place in this
+   * widget that touches popup enablement.
+   *
    * The popup is suppressed when EITHER the user has toggled it off OR a pick
    * operation is in progress (so the pick-click can't open an identify popup).
    */
   _syncPopup (popupEnabledByUser: boolean, isPicking: boolean) {
-    const view = this.state.jimuMapView?.view as any
-    if (!view) return
+    const jimuMapView = this.state.jimuMapView
+    if (!jimuMapView) return
     const enabled = popupEnabledByUser && !isPicking
     try {
-      view.popupEnabled = enabled
-      if (!enabled && typeof view.closePopup === 'function') view.closePopup()
+      if (enabled) {
+        jimuMapView.enableClickOpenPopup()
+      } else {
+        jimuMapView.disableClickOpenPopup()
+        jimuMapView.closePopup()
+      }
     } catch { /* ignore */ }
   }
 
@@ -1482,7 +1485,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
   // Render helpers — bearing cell
   // -------------------------------------------------------------------------
 
-  _renderBearingCell (course: TraverseCourse, i: number): React.ReactNode {
+  _renderBearingCell (course: TraverseCourse, i: number, S: Styles): React.ReactNode {
     const { bearingFormat, bearingEntry } = this.state
 
     if (bearingFormat === 'quadrant' && bearingEntry === 'number') {
@@ -1551,6 +1554,8 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     const mapReady = !!jimuMapView && modulesLoaded
     const drawn = closureReport !== null
     const rotationOffsetNum = parseFloat(rotationOffset) || 0
+    const S = makeStyles(this.props.theme)
+    const c = this.props.theme.sys.color
 
     this._bearingRefs.length  = courses.length
     this._distanceRefs.length = courses.length
@@ -1567,7 +1572,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     }
 
     return (
-      <div style={S.wrap}>
+      <Paper variant="flat" shape="none" className="jimu-widget widget-traverse" css={S.wrap as any}>
         <JimuMapViewComponent
           useMapWidgetId={this.props.useMapWidgetIds?.[0]}
           onActiveViewChange={this._onViewChange}
@@ -1582,7 +1587,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
 
           {/* Map Identify Popup toggle */}
           <div style={S.section}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#475569' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: c.surface.paperText }}>
               <input
                 type="checkbox"
                 checked={popupEnabled}
@@ -1594,7 +1599,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
 
           {/* Snapping toggle */}
           <div style={S.section}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#475569' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: c.surface.paperText }}>
               <input
                 type="checkbox"
                 checked={snappingEnabled}
@@ -1612,15 +1617,14 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
           {/* Starting Point */}
           <div style={S.section}>
             <div style={S.label}>Starting Point</div>
-            <calcite-button
-              appearance={isPickingStart ? 'solid' : 'outline'}
-              kind={isPickingStart ? 'brand' : 'neutral'}
-              scale="s"
-              {...(!mapReady || isDrawingCourses || isPickingRotationPoint ? { disabled: true } : {})}
+            <Button
+              type={isPickingStart ? 'primary' : 'secondary'}
+              size="sm"
+              disabled={!mapReady || isDrawingCourses || isPickingRotationPoint}
               onClick={() => this._startPickingPoint()}
             >
               {isPickingStart ? 'Click on map…' : startPoint ? 'Re-pick Start' : 'Pick Start Point'}
-            </calcite-button>
+            </Button>
             {startPoint && (
               <div style={S.coordBox}>
                 X: {startPoint.x.toFixed(2)}{'   '}Y: {startPoint.y.toFixed(2)}
@@ -1631,16 +1635,15 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
           {/* Draw Courses */}
           <div style={S.section}>
             <div style={S.label}>Draw Courses on Map</div>
-            <calcite-button
-              appearance={isDrawingCourses ? 'solid' : 'outline'}
-              kind={isDrawingCourses ? 'brand' : 'neutral'}
-              scale="s"
-              width="full"
-              {...(!mapReady || isPickingStart || isPickingRotationPoint ? { disabled: true } : {})}
+            <Button
+              type={isDrawingCourses ? 'primary' : 'secondary'}
+              size="sm"
+              style={{ width: '100%' }}
+              disabled={!mapReady || isPickingStart || isPickingRotationPoint}
               onClick={() => isDrawingCourses ? this._finishDrawingCourses() : this._startDrawingCourses()}
             >
               {isDrawingCourses ? 'Finish Drawing (Esc)' : 'Draw Courses'}
-            </calcite-button>
+            </Button>
             {isDrawingCourses && (
               <div style={S.hint}>
                 Click points on the map to add courses — each click adds a leg from the last point.
@@ -1654,58 +1657,59 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
             <div style={{ flex: 1 }}>
               <div style={S.label}>Bearing Format</div>
               <div style={S.row}>
-                <calcite-button
-                  appearance={bearingFormat === 'quadrant' ? 'solid' : 'outline'}
-                  kind={bearingFormat === 'quadrant' ? 'brand' : 'neutral'}
-                  scale="s"
+                <Button
+                  type={bearingFormat === 'quadrant' ? 'primary' : 'secondary'}
+                  size="sm"
                   style={{ flex: 1 }}
                   onClick={() => this.setState({ bearingFormat: 'quadrant', closureReport: null })}
-                >Quadrant</calcite-button>
-                <calcite-button
-                  appearance={bearingFormat === 'azimuth' ? 'solid' : 'outline'}
-                  kind={bearingFormat === 'azimuth' ? 'brand' : 'neutral'}
-                  scale="s"
+                >Quadrant</Button>
+                <Button
+                  type={bearingFormat === 'azimuth' ? 'primary' : 'secondary'}
+                  size="sm"
                   style={{ flex: 1 }}
                   onClick={() => this.setState({ bearingFormat: 'azimuth', closureReport: null })}
-                >Azimuth</calcite-button>
+                >Azimuth</Button>
               </div>
 
               {bearingFormat === 'quadrant' && (
                 <div style={{ ...S.entryToggle, marginTop: '6px' }}>
                   <span style={S.entryToggleLabel}>Entry:</span>
-                  <calcite-button
-                    appearance={bearingEntry === 'letters' ? 'solid' : 'outline'}
-                    kind={bearingEntry === 'letters' ? 'brand' : 'neutral'}
-                    scale="s"
+                  <Button
+                    type={bearingEntry === 'letters' ? 'primary' : 'secondary'}
+                    size="sm"
                     title="Enter bearing as N/S + angle + E/W (traditional)"
                     onClick={() => this.setState({ bearingEntry: 'letters', closureReport: null })}
-                  >N/S E/W</calcite-button>
-                  <calcite-button
-                    appearance={bearingEntry === 'number' ? 'solid' : 'outline'}
-                    kind={bearingEntry === 'number' ? 'brand' : 'neutral'}
-                    scale="s"
+                  >N/S E/W</Button>
+                  <Button
+                    type={bearingEntry === 'number' ? 'primary' : 'secondary'}
+                    size="sm"
                     title="Enter bearing as quadrant number (1–4) + DMS angle"
                     onClick={() => this.setState({ bearingEntry: 'number', closureReport: null })}
-                  >Q1–Q4</calcite-button>
+                  >Q1–Q4</Button>
                 </div>
               )}
             </div>
 
             <div>
               <div style={S.label} title="Default unit for new courses; also the unit used to summarize the closure report">Default / Report Unit</div>
-              <calcite-select ref={this._unitSelectRef} scale="s">
-                <calcite-option value="feet"   {...(distanceUnit === 'feet'   ? { selected: true } : {})}>Feet</calcite-option>
-                <calcite-option value="chains" {...(distanceUnit === 'chains' ? { selected: true } : {})}>Chains</calcite-option>
-                <calcite-option value="meters" {...(distanceUnit === 'meters' ? { selected: true } : {})}>Meters</calcite-option>
-                <calcite-option value="rods"   {...(distanceUnit === 'rods'   ? { selected: true } : {})}>Rods</calcite-option>
-              </calcite-select>
+              <Select
+                size="sm"
+                value={distanceUnit}
+                aria-label="Default / Report Unit"
+                onChange={(_evt, value) => this.setState({ distanceUnit: value as DistanceUnit, closureReport: null })}
+              >
+                <Option value="feet">Feet</Option>
+                <Option value="chains">Chains</Option>
+                <Option value="meters">Meters</Option>
+                <Option value="rods">Rods</Option>
+              </Select>
             </div>
             <div>
               <div style={S.label}>Color</div>
               <input
                 type="color"
                 value={traverseColor}
-                style={{ width: '40px', height: '30px', border: '1px solid #e2e8f0', borderRadius: '5px', cursor: 'pointer', padding: '1px 2px' }}
+                style={{ width: '40px', height: '30px', border: `1px solid ${c.divider.secondary}`, borderRadius: '5px', cursor: 'pointer', padding: '1px 2px' }}
                 onChange={ev => this.setState({ traverseColor: ev.target.value })}
               />
             </div>
@@ -1715,14 +1719,12 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
           <div style={S.section}>
             <div style={{ ...S.row, marginBottom: '6px' }}>
               <span style={S.label}>Traverse Courses ({courses.length})</span>
-              <calcite-button
-                appearance="outline"
-                kind="neutral"
-                scale="s"
-                icon-start="plus"
+              <Button
+                type="secondary"
+                size="sm"
                 style={{ marginLeft: 'auto' }}
                 onClick={() => this._addCourse(false)}
-              >Add Leg</calcite-button>
+              >+ Add Leg</Button>
             </div>
             <table style={S.table}>
               <thead>
@@ -1757,22 +1759,21 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                           }))
                         }}
                       >
-                        <td style={{ ...S.td, color: isSelected ? '#0369a1' : '#94a3b8', fontWeight: '600', fontSize: '11px' }}>{i + 1}</td>
+                        <td style={{ ...S.td, color: isSelected ? c.info.dark : c.surface.paperHint, fontWeight: '600', fontSize: '11px' }}>{i + 1}</td>
                         <td style={S.td} onClick={ev => ev.stopPropagation()}>
-                          <calcite-button
-                            appearance={isCurve ? 'solid' : 'outline'}
-                            kind={isCurve ? 'brand' : 'neutral'}
-                            scale="s"
+                          <Button
+                            type={isCurve ? 'primary' : 'secondary'}
+                            size="sm"
                             title={isCurve ? 'Curve — click to switch to a straight line' : 'Line — click to switch to a curve'}
                             onClick={() => this._updateCourseType(i, isCurve ? 'line' : 'curve')}
-                          >{isCurve ? 'Crv' : 'Line'}</calcite-button>
+                          >{isCurve ? 'Crv' : 'Line'}</Button>
                         </td>
                         <td style={S.td}>
-                          {isCurve && <div style={{ fontSize: '9px', color: '#94a3b8', marginBottom: '2px' }}>Chord bearing</div>}
-                          {this._renderBearingCell(course, i)}
+                          {isCurve && <div style={{ fontSize: '9px', color: c.surface.paperHint, marginBottom: '2px' }}>Chord bearing</div>}
+                          {this._renderBearingCell(course, i, S)}
                         </td>
                         <td style={S.td}>
-                          {isCurve && <div style={{ fontSize: '9px', color: '#94a3b8', marginBottom: '2px' }}>Arc length</div>}
+                          {isCurve && <div style={{ fontSize: '9px', color: c.surface.paperHint, marginBottom: '2px' }}>Arc length</div>}
                           <input
                             ref={el => { this._distanceRefs[i] = el }}
                             type="number"
@@ -1799,27 +1800,27 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                           </select>
                         </td>
                         <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                          <calcite-button
-                            appearance="outline"
-                            kind="neutral"
-                            scale="s"
-                            icon-start="plus"
+                          <Button
+                            icon
+                            type="secondary"
+                            size="sm"
                             title="Insert course after"
+                            aria-label="Insert course after"
                             onClick={ev => { ev.stopPropagation(); this._insertCourse(i) }}
-                          />
+                          >+</Button>
                           {courses.length > 1 && (
-                            <calcite-button
-                              appearance="solid"
-                              kind="danger"
-                              scale="s"
-                              icon-start="x"
+                            <Button
+                              icon
+                              type="danger"
+                              size="sm"
                               title="Remove course"
+                              aria-label="Remove course"
                               onClick={ev => {
                                 ev.stopPropagation()
                                 if (isSelected) this._highlightLayer?.removeAll()
                                 this._removeCourse(i)
                               }}
-                            />
+                            >✕</Button>
                           )}
                         </td>
                       </tr>
@@ -1827,7 +1828,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                         <tr style={isSelected ? S.trSelected : undefined}>
                           <td style={S.td} />
                           <td style={S.td} colSpan={5} onClick={ev => ev.stopPropagation()}>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px', color: '#64748b' }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px', color: c.surface.paperHint }}>
                               <span>Radius:</span>
                               <input
                                 type="number"
@@ -1839,20 +1840,18 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                                 onChange={ev => this._updateCourse(i, 'radius', ev.target.value)}
                               />
                               <span>Direction:</span>
-                              <calcite-button
-                                appearance={curveDirection === 'left' ? 'solid' : 'outline'}
-                                kind={curveDirection === 'left' ? 'brand' : 'neutral'}
-                                scale="s"
+                              <Button
+                                type={curveDirection === 'left' ? 'primary' : 'secondary'}
+                                size="sm"
                                 title="Curve bends to the left of the direction of travel"
                                 onClick={() => this._updateCourseDirection(i, 'left')}
-                              >Left</calcite-button>
-                              <calcite-button
-                                appearance={curveDirection === 'right' ? 'solid' : 'outline'}
-                                kind={curveDirection === 'right' ? 'brand' : 'neutral'}
-                                scale="s"
+                              >Left</Button>
+                              <Button
+                                type={curveDirection === 'right' ? 'primary' : 'secondary'}
+                                size="sm"
                                 title="Curve bends to the right of the direction of travel"
                                 onClick={() => this._updateCourseDirection(i, 'right')}
-                              >Right</calcite-button>
+                              >Right</Button>
                             </div>
                           </td>
                         </tr>
@@ -1872,20 +1871,18 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
 
           {/* Actions */}
           <div style={{ ...S.row, marginBottom: '6px' }}>
-            <calcite-button
-              appearance="solid"
-              kind="brand"
-              scale="s"
+            <Button
+              type="primary"
+              size="sm"
               style={{ flex: 1 }}
-              {...(!mapReady || !startPoint ? { disabled: true } : {})}
+              disabled={!mapReady || !startPoint}
               onClick={() => this._drawTraverse()}
-            >{drawn ? 'Redraw Traverse' : 'Draw Traverse'}</calcite-button>
-            <calcite-button
-              appearance="outline"
-              kind="neutral"
-              scale="s"
+            >{drawn ? 'Redraw Traverse' : 'Draw Traverse'}</Button>
+            <Button
+              type="secondary"
+              size="sm"
               onClick={() => this._clearAll()}
-            >Clear</calcite-button>
+            >Clear</Button>
           </div>
 
           {/* Rotate Traverse */}
@@ -1894,25 +1891,23 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
               Rotate Traverse (about {rotationPoint ? 'Custom Point' : 'Start Point'})
             </div>
             <div style={{ ...S.row, marginBottom: '6px' }}>
-              <calcite-button
-                appearance={isPickingRotationPoint ? 'solid' : 'outline'}
-                kind={isPickingRotationPoint ? 'brand' : 'neutral'}
-                scale="s"
+              <Button
+                type={isPickingRotationPoint ? 'primary' : 'secondary'}
+                size="sm"
                 style={{ flex: 1 }}
-                {...(!mapReady || !startPoint || isPickingStart || isDrawingCourses ? { disabled: true } : {})}
+                disabled={!mapReady || !startPoint || isPickingStart || isDrawingCourses}
                 onClick={() => isPickingRotationPoint
                   ? this._cancelPickingRotationPoint()
                   : this._startPickingRotationPoint()}
               >
                 {isPickingRotationPoint ? 'Click on map…' : rotationPoint ? 'Re-pick Rotation Point' : 'Set Rotation Point'}
-              </calcite-button>
+              </Button>
               {rotationPoint && (
-                <calcite-button
-                  appearance="outline"
-                  kind="neutral"
-                  scale="s"
+                <Button
+                  type="secondary"
+                  size="sm"
                   onClick={() => this._resetRotationPoint()}
-                >Use Start Point</calcite-button>
+                >Use Start Point</Button>
               )}
             </div>
             {rotationPoint && (
@@ -1928,18 +1923,17 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                 placeholder="0.0"
                 step="0.1"
                 title="Degrees clockwise (+) or counter-clockwise (-)"
-                {...(!startPoint ? { disabled: true } : {})}
+                disabled={!startPoint}
                 onChange={ev => this.setState({ rotationOffset: ev.target.value })}
               />
-              <span style={{ fontSize: '12px', color: '#94a3b8', flexShrink: 0 }}>°</span>
-              <calcite-button
-                appearance="solid"
-                kind="brand"
-                scale="s"
+              <span style={{ fontSize: '12px', color: c.surface.paperHint, flexShrink: 0 }}>°</span>
+              <Button
+                type="primary"
+                size="sm"
                 style={{ flex: 1 }}
-                {...(!startPoint || rotationOffsetNum === 0 ? { disabled: true } : {})}
+                disabled={!startPoint || rotationOffsetNum === 0}
                 onClick={() => this._applyRotation()}
-              >Apply Rotation</calcite-button>
+              >Apply Rotation</Button>
             </div>
           </div>
 
@@ -1953,12 +1947,12 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                 placeholder="traverse"
                 onChange={ev => this.setState({ exportFileName: ev.target.value })}
               />
-              <span style={{ fontSize: '12px', color: '#94a3b8', flexShrink: 0 }}>.geojson</span>
+              <span style={{ fontSize: '12px', color: c.surface.paperHint, flexShrink: 0 }}>.geojson</span>
             </div>
           </div>
           <div style={{ marginBottom: '6px' }}>
             <div style={{ ...S.label, marginBottom: '4px' }}>Export Geometry</div>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: '#475569' }}>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: c.surface.paperText }}>
               {([
                 ['exportLineString', 'Line'] as const,
                 ['exportPoints',     'Points'] as const,
@@ -1976,48 +1970,46 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
             </div>
           </div>
           <div style={{ marginBottom: '14px' }}>
-            <calcite-button
-              appearance="outline"
-              kind="neutral"
-              scale="s"
-              width="full"
-              icon-start="download"
-              {...(!startPoint ? { disabled: true } : {})}
+            <Button
+              type="secondary"
+              size="sm"
+              style={{ width: '100%' }}
+              disabled={!startPoint}
               onClick={() => this._exportGeoJSON()}
-            >Export GeoJSON</calcite-button>
+            >Export GeoJSON</Button>
           </div>
 
           {/* Closure Report */}
           {closureReport && (
             <div style={S.reportBox}>
-              <div style={{ fontWeight: '600', fontSize: '13px', color: '#166534', marginBottom: '8px' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: c.success.dark, marginBottom: '8px' }}>
                 Closure Report
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: '#374151' }}>Total Perimeter</span>
+                <span style={{ color: c.surface.paperText }}>Total Perimeter</span>
                 <span style={{ fontWeight: '600' }}>{closureReport.totalDist.toFixed(3)} {distanceUnit}</span>
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: '#374151' }}>Sum Departures</span>
+                <span style={{ color: c.surface.paperText }}>Sum Departures</span>
                 <span style={{ fontWeight: '600' }}>{closureReport.sumDep.toFixed(4)} {distanceUnit}</span>
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: '#374151' }}>Sum Latitudes</span>
+                <span style={{ color: c.surface.paperText }}>Sum Latitudes</span>
                 <span style={{ fontWeight: '600' }}>{closureReport.sumLat.toFixed(4)} {distanceUnit}</span>
               </div>
               <div style={{ ...S.reportRow, ...S.reportDivider }}>
-                <span style={{ color: '#374151' }}>Closure Error</span>
-                <span style={{ fontWeight: '600', color: closureReport.closureError > 0.1 ? '#dc2626' : '#166534' }}>
+                <span style={{ color: c.surface.paperText }}>Closure Error</span>
+                <span style={{ fontWeight: '600', color: closureReport.closureError > 0.1 ? c.error.dark : c.success.dark }}>
                   {closureReport.closureError.toFixed(4)} {distanceUnit}
                 </span>
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: '#374151' }}>Precision Ratio</span>
+                <span style={{ color: c.surface.paperText }}>Precision Ratio</span>
                 <span style={{ fontWeight: '600' }}>1 : {closureReport.precisionRatio.toLocaleString()}</span>
               </div>
               {courses.length >= 2 && (
                 <div style={{ ...S.reportRow, ...S.reportDivider }}>
-                  <span style={{ color: '#374151' }}>Enclosed Area</span>
+                  <span style={{ color: c.surface.paperText }}>Enclosed Area</span>
                   <span style={{ fontWeight: '600' }}>
                     {closureReport.areaAcres.toFixed(4)} ac{'  '}({Math.round(closureReport.areaSqFt).toLocaleString()} sq ft)
                   </span>
@@ -2026,7 +2018,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
             </div>
           )}
         </div>
-      </div>
+      </Paper>
     )
   }
 }
