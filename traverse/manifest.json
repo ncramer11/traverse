@@ -3,7 +3,7 @@
   "type": "widget",
   "version": "1.1.0",
   "exbVersion": "1.21.0",
-  "author": "Polk County GIS Department, Eric McAvoy",
+  "author": "Polk County GIS Department — Eric McAvoy and Nicholas Cramer",
   "label": "Traverse Tool",
   "description": "COGO traverse tool for entering survey courses by bearing and distance. Supports quadrant (N 45°30'00\" E) and azimuth formats, feet/chains/meters units, map visualization with leg labels, and a closure report with precision ratio and enclosed area. No external dependencies.",
   "copyright": "2026 Polk County, Oregon",

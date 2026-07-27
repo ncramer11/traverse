@@ -5,31 +5,15 @@ A COGO traverse widget for ArcGIS Experience Builder. Enter survey courses by be
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 - **Authors:** Eric McAvoy and Nicholas Cramer (Polk County, Oregon)
-- **Built and tested on:** ArcGIS Experience Builder Developer Edition 1.20
+- **Built and tested on:** ArcGIS Experience Builder Developer Edition 1.21
 
 > The widget folder itself lives in [`traverse/`](traverse). This repo wraps it with project files (license, this readme) so it works for both downloading a release and cloning.
 
 <!-- Tip: add a screenshot or GIF of the widget here to give people a quick visual. -->
 
-## Getting the widget
-
-There are two ways to get it. Both end with you placing a `traverse` folder into your Experience Builder install.
-
-### Option 1: Download a release (recommended)
-
-1. Go to the [Releases](https://github.com/ncramer11/traverse/releases) page.
-2. Under the latest release, download the `traverse.zip` asset.
-3. Extract it. You will get a `traverse` folder.
-
-### Option 2: Clone or download the repo
-
-```bash
-git clone https://github.com/ncramer11/traverse.git
-```
-
-Or use the green **Code** button above and choose **Download ZIP**. The `traverse` folder is inside.
-
 ## Installation
+
+Grab the `traverse` folder — download `traverse.zip` from the [latest release](https://github.com/ncramer11/traverse/releases/latest) and extract it, or clone this repo (the folder lives in [`traverse/`](traverse)).
 
 1. Copy the `traverse` folder into your Experience Builder install:
 
@@ -45,7 +29,7 @@ The widget has no external npm dependencies, so no additional install step is ne
 
 ## Requirements
 
-- ArcGIS Experience Builder Developer Edition 1.20 (the build and test target). Earlier editions may work but are untested.
+- ArcGIS Experience Builder Developer Edition 1.21 (the current build and test target; the widget originated on 1.20). Earlier editions may work but are untested.
 
 ## Features
 
