@@ -454,10 +454,10 @@ function makeStyles (theme: IMThemeVariables): Styles {
     th: { padding: '5px 6px', backgroundColor: c.surface.background, fontWeight: '600', color: c.surface.paperHint,
       textAlign: 'left', borderBottom: `1px solid ${c.divider.secondary}`, fontSize: '11px' },
     td: { padding: '4px 6px', borderBottom: `1px solid ${c.divider.tertiary}`, verticalAlign: 'middle' },
-    trSelected: { backgroundColor: c.info.light },
+    trSelected: { outline: `1.5px solid ${c.info.main}`, outlineOffset: '-1px' },
     coordBox: { backgroundColor: c.surface.background, border: `1px solid ${c.divider.secondary}`, borderRadius: r,
       padding: '5px 9px', fontSize: '11px', color: c.surface.paperText, fontFamily: 'monospace', marginTop: '5px' },
-    reportBox: { backgroundColor: c.success.light, border: `1px solid ${c.success.main}`, borderRadius: theme.sys.shape.shape2,
+    reportBox: { border: `1px solid ${c.success.main}`, borderRadius: theme.sys.shape.shape2,
       padding: '11px 14px', marginTop: '8px' },
     reportRow: { display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px' },
     reportDivider: { borderTop: `1px solid ${c.success.main}`, paddingTop: '6px', marginTop: '4px' },
@@ -1515,7 +1515,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
           <input
             ref={el => { this._qAngleRefs[i] = el }}
             type="text"
-            style={{ ...S.input, flex: 1 }}
+            style={{ ...S.input, flex: 1, minWidth: '9ch' }}
             value={qAngle}
             placeholder="45 30 00"
             title="Degrees minutes seconds — e.g. 45 30 00"
@@ -1533,7 +1533,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       <input
         ref={el => { this._bearingRefs[i] = el }}
         type="text"
-        style={S.input}
+        style={{ ...S.input, minWidth: '15ch' }}
         value={course.bearing}
         placeholder={bPlaceholder}
         onChange={ev => this._updateCourse(i, 'bearing', ev.target.value)}
@@ -1726,6 +1726,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                 onClick={() => this._addCourse(false)}
               >+ Add Leg</Button>
             </div>
+            <div style={{ overflowX: 'auto' }}>
             <table style={S.table}>
               <thead>
                 <tr>
@@ -1759,7 +1760,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                           }))
                         }}
                       >
-                        <td style={{ ...S.td, color: isSelected ? c.info.text : c.surface.paperHint, fontWeight: '600', fontSize: '11px' }}>{i + 1}</td>
+                        <td style={{ ...S.td, color: isSelected ? c.info.dark : c.surface.paperHint, fontWeight: '600', fontSize: '11px' }}>{i + 1}</td>
                         <td style={S.td} onClick={ev => ev.stopPropagation()}>
                           <Button
                             type={isCurve ? 'primary' : 'secondary'}
@@ -1861,6 +1862,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Format hint */}
@@ -1982,35 +1984,35 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
           {/* Closure Report */}
           {closureReport && (
             <div style={S.reportBox}>
-              <div style={{ fontWeight: '600', fontSize: '13px', color: c.success.text, marginBottom: '8px' }}>
+              <div style={{ fontWeight: '600', fontSize: '13px', color: c.success.dark, marginBottom: '8px' }}>
                 Closure Report
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: c.success.text }}>Total Perimeter</span>
-                <span style={{ fontWeight: '600', color: c.success.text }}>{closureReport.totalDist.toFixed(3)} {distanceUnit}</span>
+                <span style={{ color: c.success.dark }}>Total Perimeter</span>
+                <span style={{ fontWeight: '600', color: c.success.dark }}>{closureReport.totalDist.toFixed(3)} {distanceUnit}</span>
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: c.success.text }}>Sum Departures</span>
-                <span style={{ fontWeight: '600', color: c.success.text }}>{closureReport.sumDep.toFixed(4)} {distanceUnit}</span>
+                <span style={{ color: c.success.dark }}>Sum Departures</span>
+                <span style={{ fontWeight: '600', color: c.success.dark }}>{closureReport.sumDep.toFixed(4)} {distanceUnit}</span>
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: c.success.text }}>Sum Latitudes</span>
-                <span style={{ fontWeight: '600', color: c.success.text }}>{closureReport.sumLat.toFixed(4)} {distanceUnit}</span>
+                <span style={{ color: c.success.dark }}>Sum Latitudes</span>
+                <span style={{ fontWeight: '600', color: c.success.dark }}>{closureReport.sumLat.toFixed(4)} {distanceUnit}</span>
               </div>
               <div style={{ ...S.reportRow, ...S.reportDivider }}>
-                <span style={{ color: c.success.text }}>Closure Error</span>
-                <span style={{ fontWeight: '600', color: closureReport.closureError > 0.1 ? c.error.text : c.success.text }}>
+                <span style={{ color: c.success.dark }}>Closure Error</span>
+                <span style={{ fontWeight: '600', color: closureReport.closureError > 0.1 ? c.error.dark : c.success.dark }}>
                   {closureReport.closureError.toFixed(4)} {distanceUnit}
                 </span>
               </div>
               <div style={S.reportRow}>
-                <span style={{ color: c.success.text }}>Precision Ratio</span>
-                <span style={{ fontWeight: '600', color: c.success.text }}>1 : {closureReport.precisionRatio.toLocaleString()}</span>
+                <span style={{ color: c.success.dark }}>Precision Ratio</span>
+                <span style={{ fontWeight: '600', color: c.success.dark }}>1 : {closureReport.precisionRatio.toLocaleString()}</span>
               </div>
               {courses.length >= 2 && (
                 <div style={{ ...S.reportRow, ...S.reportDivider }}>
-                  <span style={{ color: c.success.text }}>Enclosed Area</span>
-                  <span style={{ fontWeight: '600', color: c.success.text }}>
+                  <span style={{ color: c.success.dark }}>Enclosed Area</span>
+                  <span style={{ fontWeight: '600', color: c.success.dark }}>
                     {closureReport.areaAcres.toFixed(4)} ac{'  '}({Math.round(closureReport.areaSqFt).toLocaleString()} sq ft)
                   </span>
                 </div>
