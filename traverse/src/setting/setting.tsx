@@ -68,6 +68,7 @@ const Setting = (props: AllWidgetSettingProps<IMConfig>) => {
             <Option value="feet">Feet</Option>
             <Option value="chains">Chains</Option>
             <Option value="meters">Meters</Option>
+            <Option value="rods">Rods</Option>
           </Select>
         </SettingRow>
       </SettingSection>

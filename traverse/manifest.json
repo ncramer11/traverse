@@ -1,11 +1,11 @@
 {
   "name": "traverse",
   "type": "widget",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "exbVersion": "1.21.0",
   "author": "Polk County GIS Department — Eric McAvoy and Nicholas Cramer",
   "label": "Traverse Tool",
-  "description": "COGO traverse tool for entering survey courses by bearing and distance. Supports quadrant (N 45°30'00\" E) and azimuth formats, feet/chains/meters units, map visualization with leg labels, and a closure report with precision ratio and enclosed area. No external dependencies.",
+  "description": "COGO traverse tool for entering survey courses by bearing and distance. Supports quadrant (N 45°30'00\" E) and azimuth formats, straight and curve courses, per-course feet/chains/meters/rods units, snapping to map features, traverse rotation, a two-point inverse readout, map visualization with leg labels, a closure report with precision ratio and enclosed area, and GeoJSON / Esri traverse file (.txt) export and import. No external dependencies.",
   "copyright": "2026 Polk County, Oregon",
   "license": "Apache-2.0",
   "properties": {},

@@ -2,6 +2,10 @@ import { React, type AllWidgetProps, type IMThemeVariables } from 'jimu-core'
 import { JimuMapViewComponent, type JimuMapView, loadArcGISJSAPIModules } from 'jimu-arcgis'
 import { Button, Select, Option, Paper } from 'jimu-ui'
 import type { BearingFormat, DistanceUnit, IMConfig } from '../config'
+import {
+  buildProTraverseFile, parseProTraverseFile,
+  type ProDirectionType, type ProDirectionUnits, type ProWriteCourse
+} from './pro-traverse-file'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -9,6 +13,16 @@ import type { BearingFormat, DistanceUnit, IMConfig } from '../config'
 
 const UNIT_TO_METERS: Record<string, number> = { feet: 0.3048, chains: 20.1168, meters: 1.0, rods: 5.0292 }
 const R_EARTH = 6378137
+
+/**
+ * Every coordinate in this widget is treated as Web Mercator meters —
+ * computeNextPoint derives a latitude from the Y value and divides by its
+ * cosine. On any other projected system that reading is nonsense (a State
+ * Plane northing of 700,000 ft reads as latitude 6.28°, drawing the traverse
+ * roughly 3.3x too small) and it fails silently, so the widget refuses to
+ * operate rather than produce plausible-looking wrong geometry.
+ */
+const WEB_MERCATOR_WKIDS = [3857, 102100, 102113, 900913]
 
 // ---------------------------------------------------------------------------
 // Bearing parsing helpers
@@ -103,6 +117,27 @@ function webMercatorToWGS84 (x: number, y: number): [number, number] {
   return [parseFloat(lon.toFixed(7)), parseFloat(lat.toFixed(7))]
 }
 
+/** Trims trailing zeros so exported numbers read like the values entered. */
+function trimNumber (v: number, decimals = 4): string {
+  const fixed = v.toFixed(decimals)
+  // Only strip inside a fractional part — an unguarded /0+$/ would turn 1200 into 12.
+  const s = fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed
+  return s === '' || s === '-0' ? '0' : s
+}
+
+/** Client-side file download via a Blob URL — no server round trip. */
+function downloadTextFile (text: string, filename: string, mime: string): void {
+  const blob = new Blob([text], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 function hexToRgba (hex: string): [number, number, number, number] {
   const h = hex.replace('#', '')
   return [
@@ -169,6 +204,8 @@ function computeAzimuthAndDistance (x0: number, y0: number, x1: number, y1: numb
  *  bearing, arc length, radius, and direction (left/right of travel). */
 type CourseType = 'line' | 'curve'
 type CurveDirection = 'left' | 'right'
+/** Whether a curve's `distance` field holds its arc length or its chord length. */
+type CurveLengthMode = 'arc' | 'chord'
 
 interface TraverseCourse {
   type: CourseType
@@ -179,6 +216,8 @@ interface TraverseCourse {
   radius?: string
   /** Curve only — which side of the chord direction the arc bends toward. */
   curveDirection?: CurveDirection
+  /** Curve only — how to read `distance`. Absent means 'arc' (the original behavior). */
+  curveLengthMode?: CurveLengthMode
 }
 interface TraversePoint { x: number; y: number }
 
@@ -197,6 +236,13 @@ type BearingEntry = 'letters' | 'number'
  * line), used for perimeter/precision-ratio totals.
  * Returns null if the course doesn't parse, or for a curve if the radius is
  * missing/invalid or the arc spans ≥ 360°.
+ *
+ * A curve's `distance` is its arc length by default, but deeds frequently
+ * state the chord instead; `curveLengthMode: 'chord'` reads it that way. Chord
+ * entry can only describe arcs up to a semicircle, because chord + radius
+ * alone does not say whether the minor or major arc was meant — a chord longer
+ * than the diameter is rejected, and the minor arc is always taken, which is
+ * what a deed call means.
  */
 function resolveCourseStep (
   course: TraverseCourse,
@@ -210,6 +256,12 @@ function resolveCourseStep (
   if (course.type === 'curve') {
     const radiusMeters = toMeters(course.radius || '', course.unit)
     if (!(radiusMeters > 0)) return null
+    if ((course.curveLengthMode ?? 'arc') === 'chord') {
+      const ratio = distMeters / (2 * radiusMeters)
+      if (ratio > 1) return null  // chord longer than the diameter — no such arc
+      const deltaRad = 2 * Math.asin(ratio)
+      return { az, stepMeters: distMeters, arcMeters: radiusMeters * deltaRad, deltaRad, radiusMeters }
+    }
     const deltaRad = distMeters / radiusMeters
     if (deltaRad >= Math.PI * 2) return null
     const chordMeters = 2 * radiusMeters * Math.sin(deltaRad / 2)
@@ -254,18 +306,26 @@ function computeCourseCurvePoints (
   return computeCurvePoints(startX, startY, step.az, step.stepMeters, step.radiusMeters!, step.deltaRad!, direction)
 }
 
+/**
+ * Walks every course from a start point, returning one vertex per course
+ * (PC/PT for curves). Returns null if ANY course fails to parse — callers use
+ * that as an all-or-nothing validation, unlike _liveRedraw, which draws the
+ * valid prefix. `rotationOffset` rotates each course's bearing, so a caller
+ * previewing a rotation gets the same chain the preview drew.
+ */
 function buildTraversePoints (
   startX: number, startY: number,
   courses: TraverseCourse[],
   bearingFormat: BearingFormat,
-  bearingEntry: BearingEntry
+  bearingEntry: BearingEntry,
+  rotationOffset = 0
 ): TraversePoint[] | null {
   const points: TraversePoint[] = [{ x: startX, y: startY }]
   for (let i = 0; i < courses.length; i++) {
     const step = resolveCourseStep(courses[i], bearingFormat, bearingEntry)
     if (step === null) return null
     const last = points[points.length - 1]
-    points.push(computeNextPoint(last.x, last.y, step.az, step.stepMeters))
+    points.push(computeNextPoint(last.x, last.y, rotateAzimuth(step.az, rotationOffset), step.stepMeters))
   }
   return points
 }
@@ -392,6 +452,15 @@ function formatBearingForEntry (az: number, format: BearingFormat, entry: Bearin
   return encodeQNum(q, `${deg} ${min} ${sec}`)
 }
 
+/** The on-map label for one course: its distance, unit and bearing. */
+function formatCourseLabel (course: TraverseCourse, az: number, format: BearingFormat): string {
+  if (course.type === 'curve') {
+    const which = (course.curveLengthMode ?? 'arc') === 'chord' ? 'chord' : 'arc'
+    return `${course.distance} ${course.unit} ${which}, R=${course.radius}\nChord ${formatBearingLabel(az, format)}`
+  }
+  return `${course.distance} ${course.unit}\n${formatBearingLabel(az, format)}`
+}
+
 function getPointColor (isStart: boolean, isEnd: boolean, closureDist: number): number[] {
   if (isStart) return [0, 180, 0, 255]
   if (isEnd && closureDist > 0.05) return [220, 38, 38, 255]
@@ -506,6 +575,16 @@ interface State {
   exportPolygon: boolean
   exportFileName: string
   popupEnabled: boolean
+  /** True while the user is picking the two points of an inverse measurement. */
+  isPickingInverse: boolean
+  /** Points picked so far for the inverse readout; the result appears at two. */
+  inversePoints: TraversePoint[]
+  inverseResult: { az: number; distanceMeters: number } | null
+  /** Set to null when the view's spatial reference is usable, a message otherwise. */
+  unsupportedSR: string | null
+  /** Outcome of the last Esri traverse-file import. */
+  importMessage: string | null
+  importWarnings: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -527,8 +606,10 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
   private _highlightLayer: any = null
   private _pivotLayer: any = null
   private _snapScratchLayer: any = null
+  private _inverseLayer: any = null
   private _snapSVM: any = null
-  private _activePickMode: 'start' | 'rotation' | 'draw' | null = null
+  private _activePickMode: 'start' | 'rotation' | 'draw' | 'inverse' | null = null
+  private _importInputRef: HTMLInputElement | null = null
   private _redrawTimer: ReturnType<typeof setTimeout> | null = null
   private _drawLastVertex: { x: number; y: number } | null = null
 
@@ -564,6 +645,12 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       exportPoints: true,
       exportPolygon: true,
       exportFileName: 'traverse',
+      isPickingInverse: false,
+      inversePoints: [],
+      inverseResult: null,
+      unsupportedSR: null,
+      importMessage: null,
+      importWarnings: [],
       popupEnabled: true
     }
     this._onViewChange = this._onViewChange.bind(this)
@@ -634,6 +721,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       if (this._labelLayer)       view.map.remove(this._labelLayer)
       if (this._highlightLayer)   view.map.remove(this._highlightLayer)
       if (this._pivotLayer)       view.map.remove(this._pivotLayer)
+      if (this._inverseLayer)     view.map.remove(this._inverseLayer)
       if (this._snapScratchLayer) view.map.remove(this._snapScratchLayer)
     }
   }
@@ -677,9 +765,23 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     })
   }
 
+  /**
+   * Rejects any view whose coordinates aren't Web Mercator meters. The
+   * geometry helpers hard-assume that (see WEB_MERCATOR_WKIDS) and would
+   * otherwise draw a silently wrong traverse, which is worse than refusing.
+   */
+  _checkSpatialReference (jimuMapView: JimuMapView): string | null {
+    const sr = (jimuMapView as any)?.view?.spatialReference
+    if (!sr) return null  // not loaded yet; re-checked on the next view change
+    if (sr.isWebMercator === true) return null
+    if (WEB_MERCATOR_WKIDS.includes(sr.wkid) || WEB_MERCATOR_WKIDS.includes(sr.latestWkid)) return null
+    const id = sr.wkid ?? sr.latestWkid ?? 'unknown'
+    return `This map uses spatial reference ${id}. The traverse tool computes geometry in Web Mercator only, so it has been disabled here to avoid drawing an incorrectly scaled traverse. Use a Web Mercator map, or contact GIS.`
+  }
+
   async _onViewChange (jimuMapView: JimuMapView) {
     if (!jimuMapView) return
-    this.setState({ jimuMapView }, async () => {
+    this.setState({ jimuMapView, unsupportedSR: this._checkSpatialReference(jimuMapView) }, async () => {
       if (!this.state.modulesLoaded) {
         const mods = await loadArcGISJSAPIModules([
           'esri/layers/GraphicsLayer',
@@ -717,11 +819,13 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       this._highlightLayer   = new this._GraphicsLayer({ listMode: 'hide', id: 'traverse-highlight' })
       // Pivot layer sits on top so the rotation-point diamond is never obscured.
       this._pivotLayer       = new this._GraphicsLayer({ listMode: 'hide', id: 'traverse-pivot' })
+      // Two-point inverse measurement, independent of the traverse itself.
+      this._inverseLayer     = new this._GraphicsLayer({ listMode: 'hide', id: 'traverse-inverse' })
       // Scratch layer used exclusively by the snapping SVM; cleared after every pick.
       this._snapScratchLayer = new this._GraphicsLayer({ listMode: 'hide', id: 'traverse-snap-scratch' })
       view.map.addMany([
         this._traverseLayer, this._labelLayer,
-        this._highlightLayer, this._pivotLayer, this._snapScratchLayer
+        this._highlightLayer, this._pivotLayer, this._inverseLayer, this._snapScratchLayer
       ])
     }
     if (!this._snapSVM && this._SketchViewModel) {
@@ -796,6 +900,8 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
         if (view) (view as any).cursor = 'auto'
         this.setState({ isPickingRotationPoint: false })
         this._syncPopup(this.state.popupEnabled, false)
+      } else if (mode === 'inverse') {
+        this._finishInverse()
       }
       return
     }
@@ -833,6 +939,24 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       if (this.state.isDrawingCourses) {
         this._applySnapSources()
         this._snapSVM.create('point')
+      }
+
+    } else if (this._activePickMode === 'inverse') {
+      const picked = [...this.state.inversePoints, { x: pt.x, y: pt.y }]
+      if (picked.length < 2) {
+        // First of the pair — keep the pick session open for the second.
+        this.setState({ inversePoints: picked }, () => this._drawInverse())
+        this._applySnapSources()
+        this._snapSVM.create('point')
+      } else {
+        const { az, distanceMeters } = computeAzimuthAndDistance(
+          picked[0].x, picked[0].y, picked[1].x, picked[1].y
+        )
+        this.setState(
+          { inversePoints: picked, inverseResult: { az, distanceMeters } },
+          () => this._drawInverse()
+        )
+        this._finishInverse()
       }
     }
   }
@@ -998,6 +1122,233 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
   }
 
   // -------------------------------------------------------------------------
+  // Two-point inverse
+  // -------------------------------------------------------------------------
+
+  /**
+   * Starts a two-point inverse: pick A, pick B, read the bearing and distance
+   * between them. Deliberately separate from "Draw Courses", which computes
+   * the same numbers but commits them as rows — this is a measurement a user
+   * can take mid-traverse (checking a deed call against a monument) without
+   * disturbing the course table.
+   */
+  _startInverse () {
+    const view = this.state.jimuMapView?.view
+    if (!view || !this._snapSVM) return
+    this._cancelPick()
+    this._inverseLayer?.removeAll()
+    this._activePickMode = 'inverse'
+    this.setState({
+      isPickingInverse: true,
+      isPickingStart: false,
+      isDrawingCourses: false,
+      isPickingRotationPoint: false,
+      inversePoints: [],
+      inverseResult: null,
+      parseError: null
+    })
+    ;(view as any).cursor = 'crosshair'
+    this._syncPopup(this.state.popupEnabled, true)
+    this._applySnapSources()
+    this._snapSVM.create('point')
+  }
+
+  _finishInverse () {
+    this._activePickMode = null
+    if (this._snapSVM && this._snapSVM.state === 'active') this._snapSVM.cancel()
+    if (this._snapScratchLayer) this._snapScratchLayer.removeAll()
+    const view = this.state.jimuMapView?.view
+    if (view) (view as any).cursor = 'auto'
+    this.setState({ isPickingInverse: false })
+    // Deferred so the pick-click can't itself open an identify popup.
+    setTimeout(() => this._syncPopup(this.state.popupEnabled, false), 0)
+  }
+
+  _clearInverse () {
+    this._inverseLayer?.removeAll()
+    this.setState({ inversePoints: [], inverseResult: null })
+  }
+
+  _drawInverse () {
+    if (!this._inverseLayer) return
+    this._inverseLayer.removeAll()
+    const { inversePoints, startPoint, jimuMapView } = this.state
+    if (inversePoints.length === 0) return
+    const sr = startPoint?.spatialReference ?? jimuMapView?.view?.spatialReference
+    const teal = [13, 148, 136, 255]
+
+    if (inversePoints.length >= 2) {
+      this._inverseLayer.add(new this._Graphic({
+        geometry: new this._Polyline({
+          paths: [inversePoints.slice(0, 2).map(pt => [pt.x, pt.y])],
+          spatialReference: sr
+        }),
+        symbol: new this._SimpleLine({ color: teal, width: 2, style: 'short-dash' })
+      }))
+    }
+    for (const pt of inversePoints.slice(0, 2)) {
+      this._inverseLayer.add(new this._Graphic({
+        geometry: new this._Point({ x: pt.x, y: pt.y, spatialReference: sr }),
+        symbol: new this._SimpleMarker({
+          color: teal,
+          outline: { color: [255, 255, 255, 255], width: 1.5 },
+          size: 9,
+          style: 'square'
+        })
+      }))
+    }
+  }
+
+  /** Appends the current inverse measurement to the course table as a line. */
+  _addInverseAsCourse () {
+    const { inverseResult, distanceUnit, bearingFormat, bearingEntry } = this.state
+    if (!inverseResult) return
+    const distance = trimNumber(inverseResult.distanceMeters / (UNIT_TO_METERS[distanceUnit] || 1), 2)
+    const bearing = formatBearingForEntry(inverseResult.az, bearingFormat, bearingEntry)
+    this.setState(prev => {
+      const courses = [...prev.courses]
+      const lastIdx = courses.length - 1
+      const last = courses[lastIdx]
+      const row: TraverseCourse = { type: 'line', bearing, distance, unit: prev.distanceUnit }
+      // Same rule as map-click drawing: fill an empty trailing LINE row rather
+      // than stacking a redundant one, but never overwrite a started curve.
+      if (lastIdx >= 0 && last.type === 'line' && !last.bearing && !last.distance) courses[lastIdx] = row
+      else courses.push(row)
+      return { courses, closureReport: null }
+    })
+  }
+
+  // -------------------------------------------------------------------------
+  // Esri traverse file (.txt) — see ./pro-traverse-file.ts for the format
+  // -------------------------------------------------------------------------
+
+  /**
+   * Writes the traverse as an ArcGIS Pro / ArcMap traverse file.
+   *
+   * The format carries no distance unit — Esri reads every number in the units
+   * of the coordinate system the file is loaded into — so every course is
+   * normalized to the report unit here and the panel states which one was
+   * used. Rotation is applied, so the file matches the drawn traverse.
+   */
+  _exportProTraverse () {
+    const { startPoint, courses, distanceUnit, bearingFormat, bearingEntry,
+      exportFileName, rotationPoint } = this.state
+    if (!startPoint) return
+
+    const rotationOffset = parseFloat(this.state.rotationOffset) || 0
+    const pivot = rotationPoint ?? startPoint
+    const effectiveStart = rotatePointAround(startPoint.x, startPoint.y, pivot.x, pivot.y, rotationOffset)
+
+    const directionType: ProDirectionType = bearingFormat === 'quadrant' ? 'QB' : 'NA'
+    const directionUnits: ProDirectionUnits = bearingFormat === 'quadrant' ? 'DMS' : 'DD'
+    const unitFactor = UNIT_TO_METERS[distanceUnit] || 1
+
+    const writeCourses: ProWriteCourse[] = []
+    let last = { x: effectiveStart.x, y: effectiveStart.y }
+    for (const c of courses) {
+      const step = resolveCourseStep(c, bearingFormat, bearingEntry)
+      if (step === null) break  // stop at the first invalid course, as everywhere else
+      const az = rotateAzimuth(step.az, rotationOffset)
+      last = computeNextPoint(last.x, last.y, az, step.stepMeters)
+      writeCourses.push({
+        type: c.type,
+        az,
+        // Always the arc length: Esri's A curve spec means arc, whichever way
+        // the row happens to have been entered.
+        distance: step.arcMeters / unitFactor,
+        radius: step.radiusMeters !== undefined ? step.radiusMeters / unitFactor : undefined,
+        curveDirection: c.curveDirection || 'right'
+      })
+    }
+    if (writeCourses.length === 0) {
+      this.setState({ parseError: 'Enter at least one valid course before exporting.' })
+      return
+    }
+
+    const text = buildProTraverseFile({
+      directionType,
+      directionUnits,
+      startPoint: { x: effectiveStart.x, y: effectiveStart.y },
+      endPoint: last,
+      courses: writeCourses
+    })
+    downloadTextFile(text, (exportFileName.trim() || 'traverse') + '.txt', 'text/plain')
+  }
+
+  /**
+   * Loads an ArcGIS Pro / ArcMap traverse file, replacing the current courses.
+   *
+   * Because the format states no unit, distances are read as the current
+   * report unit and that assumption is reported back to the user rather than
+   * buried — along with any convention the parser had to apply (see
+   * parseProTraverseFile).
+   */
+  async _importProTraverse (file: File) {
+    const { bearingFormat, bearingEntry, distanceUnit } = this.state
+
+    let text: string
+    try {
+      text = await file.text()
+    } catch {
+      this.setState({ parseError: `Could not read ${file.name}.`, importMessage: null, importWarnings: [] })
+      return
+    }
+
+    let parsed
+    try {
+      parsed = parseProTraverseFile(text)
+    } catch (err) {
+      this.setState({
+        parseError: err instanceof Error ? err.message : 'Could not read that traverse file.',
+        importMessage: null,
+        importWarnings: []
+      })
+      return
+    }
+
+    const warnings = [
+      `Distances read as ${distanceUnit} — an Esri traverse file records no unit.`,
+      ...parsed.warnings
+    ]
+
+    const courses: TraverseCourse[] = parsed.courses.map(c => {
+      const row: TraverseCourse = {
+        type: c.type,
+        bearing: formatBearingForEntry(c.az, bearingFormat, bearingEntry),
+        distance: trimNumber(c.distance),
+        unit: distanceUnit
+      }
+      if (c.type === 'curve') {
+        row.radius = trimNumber(c.radius ?? 0)
+        row.curveDirection = c.curveDirection ?? 'right'
+        // The parser always resolves a curve to its arc length.
+        row.curveLengthMode = 'arc'
+      }
+      return row
+    })
+
+    const sr = this.state.startPoint?.spatialReference ?? this.state.jimuMapView?.view?.spatialReference
+    let startPoint = this.state.startPoint
+    if (parsed.startPoint && sr) {
+      startPoint = { x: parsed.startPoint.x, y: parsed.startPoint.y, spatialReference: sr }
+    } else if (!parsed.startPoint) {
+      warnings.push('The file had no SP line, so the current start point was kept.')
+    }
+
+    this._highlightLayer?.removeAll()
+    this.setState({
+      courses,
+      startPoint,
+      closureReport: null,
+      parseError: null,
+      selectedCourseIndex: null,
+      rotationOffset: '',
+      importMessage: `Loaded ${courses.length} course${courses.length === 1 ? '' : 's'} from ${file.name}.`,
+      importWarnings: warnings
+    })
+  }
+
+  // -------------------------------------------------------------------------
   // Leg mutation
   // -------------------------------------------------------------------------
 
@@ -1059,6 +1410,14 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     this.setState(prev => {
       const courses = [...prev.courses]
       courses[i] = { ...courses[i], curveDirection }
+      return { courses, closureReport: null }
+    })
+  }
+
+  _updateCourseLengthMode (i: number, curveLengthMode: CurveLengthMode) {
+    this.setState(prev => {
+      const courses = [...prev.courses]
+      courses[i] = { ...courses[i], curveLengthMode }
       return { courses, closureReport: null }
     })
   }
@@ -1165,9 +1524,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
         }))
       }
 
-      const courseLabel = course.type === 'curve'
-        ? `${course.distance} ${course.unit} arc, R=${course.radius}\nChord ${formatBearingLabel(step.az, bearingFormat)}`
-        : `${course.distance} ${course.unit}\n${formatBearingLabel(step.az, bearingFormat)}`
+      const courseLabel = formatCourseLabel(course, step.az, bearingFormat)
       this._labelLayer.add(new this._Graphic({
         geometry: new this._Point({ x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2, spatialReference: sr }),
         symbol: new this._TextSymbol({
@@ -1249,8 +1606,17 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     }))
   }
 
+  /**
+   * Commits the traverse: validates every course, renders it, zooms to the
+   * result and produces the closure report.
+   *
+   * Rendering is delegated to _liveRedraw rather than duplicated here, so the
+   * committed geometry can never disagree with the live preview — in
+   * particular over a typed-but-unapplied rotation offset, which the preview
+   * honors and this method used to ignore.
+   */
   _drawTraverse () {
-    const { startPoint, courses, distanceUnit, bearingFormat, bearingEntry } = this.state
+    const { startPoint, courses, distanceUnit, bearingFormat, bearingEntry, rotationPoint } = this.state
     const view = this.state.jimuMapView?.view
 
     if (!startPoint) {
@@ -1263,83 +1629,45 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       this.setState({ parseError: 'Enter at least one traverse course.' }); return
     }
 
-    const points = buildTraversePoints(startPoint.x, startPoint.y, courses, bearingFormat, bearingEntry)
+    const rotationOffset = parseFloat(this.state.rotationOffset) || 0
+    const pivot = rotationPoint ?? startPoint
+    const effectiveStart = rotatePointAround(startPoint.x, startPoint.y, pivot.x, pivot.y, rotationOffset)
+    const points = buildTraversePoints(
+      effectiveStart.x, effectiveStart.y, courses, bearingFormat, bearingEntry, rotationOffset
+    )
     if (!points) {
       this.setState({ parseError: 'Could not parse one or more courses. Check bearing format and distance values.' }); return
     }
 
-    this._traverseLayer.removeAll()
-    this._labelLayer.removeAll()
+    this._liveRedraw()
 
-    const sr = startPoint.spatialReference
-    const lineColor = hexToRgba(this.state.traverseColor)
-    const closureColor = [249, 115, 22, 255]
-    const geomForZoom: any[] = []
-
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[i], p1 = points[i + 1]
-      const course = courses[i]
-      const step = resolveCourseStep(course, bearingFormat, bearingEntry)!
-
-      let lineGeom: any
-      if (course.type === 'curve') {
-        const arcPts = computeCourseCurvePoints(p0.x, p0.y, step, course.curveDirection || 'right')
-        lineGeom = new this._Polyline({ paths: [arcPts.map(p => [p.x, p.y])], spatialReference: sr })
-        this._traverseLayer.add(new this._Graphic({
-          geometry: lineGeom,
-          symbol: new this._SimpleLine({ color: lineColor, width: 2, style: 'dash-dot' })
-        }))
+    // Zoom to the chord path plus each curve's interpolated arc, so a
+    // large-delta curve bulging well outside its chord isn't cropped.
+    const zoomPath: Array<[number, number]> = [[points[0].x, points[0].y]]
+    for (let i = 0; i < courses.length; i++) {
+      const step = resolveCourseStep(courses[i], bearingFormat, bearingEntry)!
+      const p0 = points[i]
+      if (courses[i].type === 'curve') {
+        const rotated = { ...step, az: rotateAzimuth(step.az, rotationOffset) }
+        for (const pt of computeCourseCurvePoints(p0.x, p0.y, rotated, courses[i].curveDirection || 'right').slice(1)) {
+          zoomPath.push([pt.x, pt.y])
+        }
       } else {
-        lineGeom = new this._Polyline({ paths: [[[p0.x, p0.y], [p1.x, p1.y]]], spatialReference: sr })
-        this._traverseLayer.add(new this._Graphic({
-          geometry: lineGeom,
-          symbol: new this._SimpleLine({ color: lineColor, width: 2, style: 'dash' })
-        }))
+        zoomPath.push([points[i + 1].x, points[i + 1].y])
       }
-      geomForZoom.push(lineGeom)
-
-      const courseLabel = course.type === 'curve'
-        ? `${course.distance} ${course.unit} arc, R=${course.radius}\nChord ${formatBearingLabel(step.az, bearingFormat)}`
-        : `${course.distance} ${course.unit}\n${formatBearingLabel(step.az, bearingFormat)}`
-      this._labelLayer.add(new this._Graphic({
-        geometry: new this._Point({ x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2, spatialReference: sr }),
-        symbol: new this._TextSymbol({
-          text: courseLabel,
-          color: lineColor,
-          font: { size: 9, family: 'sans-serif' },
-          haloColor: [255, 255, 255, 230],
-          haloSize: 1.5,
-          horizontalAlignment: 'center',
-          verticalAlignment: 'bottom'
-        })
-      }))
+    }
+    if (zoomPath.length > 1) {
+      view.goTo(
+        new this._Polyline({ paths: [zoomPath], spatialReference: startPoint.spatialReference }),
+        { animate: true }
+      ).catch(() => {})
     }
 
-    const first = points[0], last = points[points.length - 1]
-    const closureDist = Math.hypot(last.x - first.x, last.y - first.y)
-    if (closureDist > 0.05) {
-      this._traverseLayer.add(new this._Graphic({
-        geometry: new this._Polyline({ paths: [[[last.x, last.y], [first.x, first.y]]], spatialReference: sr }),
-        symbol: new this._SimpleLine({ color: closureColor, width: 1.5, style: 'dash' })
-      }))
-    }
-
-    for (let j = 0; j < points.length; j++) {
-      const pt = points[j]
-      this._traverseLayer.add(new this._Graphic({
-        geometry: new this._Point({ x: pt.x, y: pt.y, spatialReference: sr }),
-        symbol: new this._SimpleMarker({
-          color: getPointColor(j === 0, j === points.length - 1, closureDist),
-          outline: { color: [255, 255, 255, 255], width: 1.5 },
-          size: j === 0 ? 12 : 8,
-          style: 'circle'
-        })
-      }))
-    }
-
-    if (geomForZoom.length > 0) view.goTo(geomForZoom, { animate: true }).catch(() => {})
     this._redrawHighlight(this.state.selectedCourseIndex)
-    this.setState({ closureReport: computeClosureReport(courses, distanceUnit, bearingFormat, bearingEntry), parseError: null })
+    this.setState({
+      closureReport: computeClosureReport(courses, distanceUnit, bearingFormat, bearingEntry),
+      parseError: null
+    })
   }
 
   /**
@@ -1377,6 +1705,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     if (this._labelLayer)       this._labelLayer.removeAll()
     if (this._highlightLayer)   this._highlightLayer.removeAll()
     if (this._pivotLayer)       this._pivotLayer.removeAll()
+    if (this._inverseLayer)     this._inverseLayer.removeAll()
     this._syncPopup(this.state.popupEnabled, false)
     this.setState(prev => ({
       startPoint: null,
@@ -1388,30 +1717,45 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
       isPickingRotationPoint: false,
       selectedCourseIndex: null,
       rotationOffset: '',
-      rotationPoint: null
+      rotationPoint: null,
+      isPickingInverse: false,
+      inversePoints: [],
+      inverseResult: null,
+      importMessage: null,
+      importWarnings: []
     }))
   }
 
+  /**
+   * Writes the traverse as GeoJSON. Rotation is applied, so the file matches
+   * the drawn traverse rather than the unrotated stored bearings.
+   */
   _exportGeoJSON () {
     const { startPoint, courses, distanceUnit, bearingFormat, bearingEntry,
-      closureReport, traverseColor, exportLineString, exportPoints, exportPolygon, exportFileName } = this.state
+      closureReport, traverseColor, exportLineString, exportPoints, exportPolygon,
+      exportFileName, rotationPoint } = this.state
     if (!startPoint) return
+
+    const rotationOffset = parseFloat(this.state.rotationOffset) || 0
+    const pivot = rotationPoint ?? startPoint
+    const effectiveStart = rotatePointAround(startPoint.x, startPoint.y, pivot.x, pivot.y, rotationOffset)
 
     // Walk courses, stopping at the first invalid entry.
     // `points` holds one vertex per course (PC/PT for curves).
     // `densePoints` interpolates each curve's arc for smooth LineString/Polygon export.
-    const points: TraversePoint[] = [{ x: startPoint.x, y: startPoint.y }]
-    const densePoints: TraversePoint[] = [{ x: startPoint.x, y: startPoint.y }]
+    const points: TraversePoint[] = [{ x: effectiveStart.x, y: effectiveStart.y }]
+    const densePoints: TraversePoint[] = [{ x: effectiveStart.x, y: effectiveStart.y }]
     const validCourses: Array<{ course: TraverseCourse; arcMeters: number }> = []
 
     for (const c of courses) {
       const step = resolveCourseStep(c, bearingFormat, bearingEntry)
       if (step === null) break
+      const rotated = { ...step, az: rotateAzimuth(step.az, rotationOffset) }
       const last = points[points.length - 1]
-      const next = computeNextPoint(last.x, last.y, step.az, step.stepMeters)
+      const next = computeNextPoint(last.x, last.y, rotated.az, rotated.stepMeters)
       points.push(next)
       if (c.type === 'curve') {
-        densePoints.push(...computeCourseCurvePoints(last.x, last.y, step, c.curveDirection || 'right').slice(1))
+        densePoints.push(...computeCourseCurvePoints(last.x, last.y, rotated, c.curveDirection || 'right').slice(1))
       } else {
         densePoints.push(next)
       }
@@ -1470,15 +1814,11 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     }
 
     const geojson = { type: 'FeatureCollection', features }
-    const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = (exportFileName.trim() || 'traverse') + '.geojson'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    downloadTextFile(
+      JSON.stringify(geojson, null, 2),
+      (exportFileName.trim() || 'traverse') + '.geojson',
+      'application/json'
+    )
   }
 
   // -------------------------------------------------------------------------
@@ -1550,8 +1890,12 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
     const { jimuMapView, modulesLoaded, isPickingStart, isDrawingCourses, startPoint, courses,
       bearingFormat, bearingEntry, distanceUnit, closureReport, parseError,
       selectedCourseIndex, traverseColor, exportLineString, exportPoints, exportPolygon,
-      popupEnabled, rotationOffset, rotationPoint, isPickingRotationPoint, snappingEnabled } = this.state
-    const mapReady = !!jimuMapView && modulesLoaded
+      popupEnabled, rotationOffset, rotationPoint, isPickingRotationPoint, snappingEnabled,
+      isPickingInverse, inversePoints, inverseResult, unsupportedSR,
+      importMessage, importWarnings } = this.state
+    // An unusable spatial reference disables every map interaction: see
+    // _checkSpatialReference — the alternative is a silently mis-scaled traverse.
+    const mapReady = !!jimuMapView && modulesLoaded && !unsupportedSR
     const drawn = closureReport !== null
     const rotationOffsetNum = parseFloat(rotationOffset) || 0
     const S = makeStyles(this.props.theme)
@@ -1584,6 +1928,8 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
           {!jimuMapView && (
             <div style={S.warn}>Connect this widget to a map in the widget settings.</div>
           )}
+
+          {unsupportedSR && <div style={S.errorBox}>{unsupportedSR}</div>}
 
           {/* Map Identify Popup toggle */}
           <div style={S.section}>
@@ -1649,6 +1995,42 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                 Click points on the map to add courses — each click adds a leg from the last point.
                 Press Esc or click Finish when done.
               </div>
+            )}
+          </div>
+
+          {/* Two-point inverse */}
+          <div style={S.section}>
+            <div style={S.label}>Inverse (Two Points)</div>
+            <div style={S.row}>
+              <Button
+                type={isPickingInverse ? 'primary' : 'secondary'}
+                size="sm"
+                style={{ flex: 1 }}
+                disabled={!mapReady || isPickingStart || isDrawingCourses || isPickingRotationPoint}
+                onClick={() => isPickingInverse ? this._finishInverse() : this._startInverse()}
+              >
+                {isPickingInverse
+                  ? (inversePoints.length === 0 ? 'Click first point…' : 'Click second point…')
+                  : 'Measure Two Points'}
+              </Button>
+              {(inverseResult !== null || inversePoints.length > 0) && (
+                <Button type="secondary" size="sm" onClick={() => this._clearInverse()}>Clear</Button>
+              )}
+            </div>
+            {inverseResult !== null && (
+              <React.Fragment>
+                <div style={S.coordBox}>
+                  {formatBearingLabel(inverseResult.az, bearingFormat)}
+                  {'   '}
+                  {trimNumber(inverseResult.distanceMeters / (UNIT_TO_METERS[distanceUnit] || 1), 3)} {distanceUnit}
+                </div>
+                <Button
+                  type="secondary"
+                  size="sm"
+                  style={{ width: '100%', marginTop: '6px' }}
+                  onClick={() => this._addInverseAsCourse()}
+                >Add as Course</Button>
+              </React.Fragment>
             )}
           </div>
 
@@ -1747,6 +2129,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                   const isSelected = i === selectedCourseIndex
                   const isCurve = course.type === 'curve'
                   const curveDirection = course.curveDirection ?? 'right'
+                  const curveLengthMode = course.curveLengthMode ?? 'arc'
                   const rowStyle: React.CSSProperties = isSelected
                     ? { ...S.trSelected, cursor: 'pointer' }
                     : { cursor: 'pointer' }
@@ -1774,7 +2157,11 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                           {this._renderBearingCell(course, i, S)}
                         </td>
                         <td style={S.td}>
-                          {isCurve && <div style={{ fontSize: '9px', color: c.surface.paperHint, marginBottom: '2px' }}>Arc length</div>}
+                          {isCurve && (
+                            <div style={{ fontSize: '9px', color: c.surface.paperHint, marginBottom: '2px' }}>
+                              {(course.curveLengthMode ?? 'arc') === 'chord' ? 'Chord length' : 'Arc length'}
+                            </div>
+                          )}
                           <input
                             ref={el => { this._distanceRefs[i] = el }}
                             type="number"
@@ -1829,7 +2216,7 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                         <tr style={isSelected ? S.trSelected : undefined}>
                           <td style={S.td} />
                           <td style={S.td} colSpan={5} onClick={ev => ev.stopPropagation()}>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px', color: c.surface.paperHint }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '11px', color: c.surface.paperHint }}>
                               <span>Radius:</span>
                               <input
                                 type="number"
@@ -1853,6 +2240,19 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
                                 title="Curve bends to the right of the direction of travel"
                                 onClick={() => this._updateCourseDirection(i, 'right')}
                               >Right</Button>
+                              <span>Length is:</span>
+                              <Button
+                                type={curveLengthMode === 'arc' ? 'primary' : 'secondary'}
+                                size="sm"
+                                title="The distance above is the arc length along the curve"
+                                onClick={() => this._updateCourseLengthMode(i, 'arc')}
+                              >Arc</Button>
+                              <Button
+                                type={curveLengthMode === 'chord' ? 'primary' : 'secondary'}
+                                size="sm"
+                                title="The distance above is the straight chord from PC to PT (minor arc)"
+                                onClick={() => this._updateCourseLengthMode(i, 'chord')}
+                              >Chord</Button>
                             </div>
                           </td>
                         </tr>
@@ -1939,46 +2339,92 @@ class TraverseWidget extends React.Component<AllWidgetProps<IMConfig>, State> {
             </div>
           </div>
 
-          <div style={{ marginBottom: '6px' }}>
-            <div style={{ ...S.label, marginBottom: '4px' }}>File Name</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {/* Export / Import */}
+          <div style={S.section}>
+            <div style={S.label}>Export / Import</div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
               <input
                 type="text"
                 style={{ ...S.input, flex: 1 }}
                 value={this.state.exportFileName}
                 placeholder="traverse"
+                aria-label="Export file name"
                 onChange={ev => this.setState({ exportFileName: ev.target.value })}
               />
-              <span style={{ fontSize: '12px', color: c.surface.paperHint, flexShrink: 0 }}>.geojson</span>
+              <span style={{ fontSize: '12px', color: c.surface.paperHint, flexShrink: 0 }}>.geojson / .txt</span>
             </div>
-          </div>
-          <div style={{ marginBottom: '6px' }}>
-            <div style={{ ...S.label, marginBottom: '4px' }}>Export Geometry</div>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: c.surface.paperText }}>
-              {([
-                ['exportLineString', 'Line'] as const,
-                ['exportPoints',     'Points'] as const,
-                ['exportPolygon',    'Polygon'] as const
-              ]).map(([key, label]) => (
-                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={this.state[key]}
-                    onChange={ev => this.setState({ [key]: ev.target.checked } as any)}
-                  />
-                  {label}
-                </label>
-              ))}
+
+            <div style={{ marginBottom: '6px' }}>
+              <div style={{ ...S.label, marginBottom: '4px' }}>GeoJSON Geometry</div>
+              <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: c.surface.paperText }}>
+                {([
+                  ['exportLineString', 'Line'] as const,
+                  ['exportPoints',     'Points'] as const,
+                  ['exportPolygon',    'Polygon'] as const
+                ]).map(([key, label]) => (
+                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={this.state[key]}
+                      onChange={ev => this.setState({ [key]: ev.target.checked } as any)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-          <div style={{ marginBottom: '14px' }}>
+
+            <div style={{ ...S.row, marginBottom: '6px' }}>
+              <Button
+                type="secondary"
+                size="sm"
+                style={{ flex: 1 }}
+                disabled={!startPoint}
+                onClick={() => this._exportGeoJSON()}
+              >Export GeoJSON</Button>
+              <Button
+                type="secondary"
+                size="sm"
+                style={{ flex: 1 }}
+                disabled={!startPoint}
+                title="ArcGIS Pro / ArcMap traverse file"
+                onClick={() => this._exportProTraverse()}
+              >Export .txt</Button>
+            </div>
+
             <Button
               type="secondary"
               size="sm"
               style={{ width: '100%' }}
-              disabled={!startPoint}
-              onClick={() => this._exportGeoJSON()}
-            >Export GeoJSON</Button>
+              disabled={!mapReady}
+              title="Load an ArcGIS Pro / ArcMap traverse file, replacing the courses below"
+              onClick={() => this._importInputRef?.click()}
+            >Import Traverse File (.txt)…</Button>
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              ref={el => { this._importInputRef = el }}
+              style={{ display: 'none' }}
+              onChange={ev => {
+                const file = ev.target.files?.[0]
+                // Reset so re-picking the same file fires change again.
+                ev.target.value = ''
+                if (file) void this._importProTraverse(file)
+              }}
+            />
+
+            <div style={{ ...S.hint, marginTop: '6px', marginBottom: 0 }}>
+              An Esri traverse file records no distance unit, so courses are written and
+              read as {distanceUnit}. Curves are written as arc length.
+            </div>
+
+            {importMessage && <div style={S.coordBox}>{importMessage}</div>}
+            {importWarnings.length > 0 && (
+              <div style={{ ...S.warn, marginTop: '6px', marginBottom: 0 }}>
+                {importWarnings.map((w, k) => <div key={k}>{w}</div>)}
+              </div>
+            )}
           </div>
 
           {/* Closure Report */}
