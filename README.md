@@ -1,58 +1,44 @@
 # Traverse Widget for ArcGIS Experience Builder
 
-A COGO traverse widget for ArcGIS Experience Builder. Enter survey courses by bearing and distance (or curve arc data) and the widget draws the traverse on the map, complete with a closure report, per-course distance units, on-map click-to-draw with snapping, traverse rotation, and GeoJSON export.
+A COGO traverse widget for ArcGIS Experience Builder. Enter survey courses by bearing and distance, or by curve, and the widget draws the traverse on the map with leg labels and a closure report.
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 - **Authors:** Eric McAvoy and Nicholas Cramer (Polk County, Oregon)
-- **Built and tested on:** ArcGIS Experience Builder Developer Edition 1.21
-
-> The widget folder itself lives in [`traverse/`](traverse). This repo wraps it with project files (license, this readme) so it works for both downloading a release and cloning.
-
-<!-- Tip: add a screenshot or GIF of the widget here to give people a quick visual. -->
+- **Requires:** ArcGIS Experience Builder Developer Edition 1.21, on a Web Mercator map. All geometry is computed in Web Mercator map units.
 
 ## Installation
 
-Grab the `traverse` folder — download `traverse.zip` from the [latest release](https://github.com/ncramer11/traverse/releases/latest) and extract it, or clone this repo (the folder lives in [`traverse/`](traverse)).
+Download `traverse.zip` from the [latest release](https://github.com/ncramer11/traverse/releases/latest) and extract it, or clone this repo and take the [`traverse/`](traverse) folder. Copy it into your Experience Builder install:
 
-1. Copy the `traverse` folder into your Experience Builder install:
+```
+<ArcGISExperienceBuilder>/client/your-extensions/widgets/traverse
+```
 
-   ```
-   <ArcGISExperienceBuilder>/client/your-extensions/widgets/traverse
-   ```
+`manifest.json` must sit directly inside `traverse/`. Nesting it a second level deep is the usual cause of the widget not registering.
 
-   Keep `manifest.json` directly inside `traverse/`, not nested a second level deep. Nesting is the usual cause of the widget not registering.
-
-2. Start (or restart) the client and refresh the Builder window. The widget appears under **Insert Widget > Custom**.
-
-The widget has no external npm dependencies, so no additional install step is needed.
-
-## Requirements
-
-- ArcGIS Experience Builder Developer Edition 1.21 (the current build and test target; the widget originated on 1.20). Earlier editions may work but are untested.
+Restart the client and refresh the Builder window. The widget appears under **Insert Widget > Custom**. There are no npm dependencies, so there is nothing else to install.
 
 ## Features
 
-- Course entry by bearing and distance, with quadrant (N 45°30'00" E) and azimuth bearing formats.
-- Curve courses: enter a radius and left/right direction, and curves render as true arcs on the map. The closure report follows standard COGO practice (arc length for total distance, chord for departure/latitude).
-- Per-course distance units (feet, chains, meters, rods) with a global default/report unit, so mixed-unit deed calls can be entered without conversion.
-- Live redraw as you type, so the traverse updates on the map while you enter courses.
-- On-map click-to-draw: click vertices on the map and the widget derives the bearing and distance for each course, with snapping to visible map features.
-- Start point picking on the map, also with snapping.
-- Traverse rotation with a live preview and an optional custom pivot point.
+- Bearing and distance entry in quadrant (N 45°30'00" E) or azimuth format, with cardinal shortcuts and 10-key friendly navigation.
+- Curve courses by radius and left or right direction, entered as either arc length or chord length. Curves draw as true arcs.
+- Per-course distance units (feet, chains, meters, rods), so mixed-unit deed calls need no conversion.
+- Live redraw as you type.
+- Click-to-draw on the map, start point picking, and a two-point inverse readout, all with snapping to visible map features.
+- Traverse rotation with a live preview and an optional custom pivot.
 - Closure report with precision ratio, total distance, and enclosed area.
-- GeoJSON export (points, lines, and polygon). Curves export as densified geometry, so exported lines actually curve rather than cutting across the chord.
-- On-map color picker and keyboard navigation for fast course entry.
-- Optional popup suppression while drafting a traverse, so map clicks do not open identify popups.
+- Export to GeoJSON, or to an [Esri traverse file](https://doc.esri.com/en/arcgis-pro/latest/help/editing/traverse-file-format.html) that ArcGIS Pro can load. Traverse files saved from Pro or ArcMap can be imported. That format records no distance unit, so courses are written and read in the unit selected in the widget, which the panel states.
+- Optional popup suppression while drafting, so map clicks do not open identify popups.
 
 ## Settings
 
-In the widget settings panel you can select the map widget, set the default bearing format (quadrant or azimuth), and set the default distance unit (feet, chains, or meters). Individual courses can override the default unit.
+Select the map widget, the default bearing format (quadrant or azimuth), and the default distance unit. Individual courses can override the unit.
 
-## Feedback and issues
+## Feedback
 
-Please report bugs and enhancement requests in this repo's [Issues](https://github.com/ncramer11/traverse/issues) tab.
+Please report bugs and enhancement requests in the [Issues](https://github.com/ncramer11/traverse/issues) tab.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE). Copyright Polk County, Oregon.
+[Apache License 2.0](LICENSE). Copyright Polk County, Oregon.
